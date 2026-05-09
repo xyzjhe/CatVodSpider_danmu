@@ -472,6 +472,14 @@ public class LeoDanmakuService {
 
     // 直接推送弹幕URL
     public static void pushDanmakuDirect(DanmakuItem danmakuItem, Activity activity, boolean isAuto) {
+        pushDanmakuDirect(danmakuItem, activity, isAuto, false);
+    }
+
+    public static void pushDanmakuDirect(DanmakuItem danmakuItem, Activity activity, boolean isAuto, boolean forceRefresh) {
+        if (danmakuItem == null) {
+            DanmakuSpider.log("⚠️ 推送弹幕为空，跳过");
+            return;
+        }
         String danmakuUrl = danmakuItem.getDanmakuUrl();
         if (TextUtils.isEmpty(danmakuUrl)) {
             DanmakuSpider.log("⚠️ 推送弹幕URL为空，跳过");
@@ -479,16 +487,19 @@ public class LeoDanmakuService {
         }
 
         long currentTime = System.currentTimeMillis();
+        DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
+        int offsetMs = config != null ? config.getDanmakuTimeOffsetMs() : 0;
+        String pushKey = danmakuUrl + "#offset=" + offsetMs;
 
         // 检查此URL的上次推送时间
-        Long lastPush = lastPushTimes.get(danmakuUrl);
-        if (lastPush != null && (currentTime - lastPush < PUSH_MIN_INTERVAL)) {
-            DanmakuSpider.log("⚠️ 推送过于频繁 (同一URL)，跳过: " + danmakuUrl);
+        Long lastPush = lastPushTimes.get(pushKey);
+        if (!forceRefresh && lastPush != null && (currentTime - lastPush < PUSH_MIN_INTERVAL)) {
+            DanmakuSpider.log("⚠️ 推送过于频繁 (同一URL和偏移)，跳过: " + danmakuUrl);
             return;
         }
 
         // 更新推送时间并清理旧记录
-        lastPushTimes.put(danmakuUrl, currentTime);
+        lastPushTimes.put(pushKey, currentTime);
         cleanupOldPushTimes(currentTime);
 
         // 记录弹幕URL（这个可以在主线程执行）
@@ -592,8 +603,14 @@ public class LeoDanmakuService {
 
             // 步骤2: 数据验证成功，开始推送
             String localIp = NetworkUtils.getLocalIpAddress();
+            DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
+            int offsetMs = config != null ? config.getDanmakuTimeOffsetMs() : 0;
+            String refreshPath = buildDanmakuRefreshPath(danmakuItem, localIp, offsetMs);
             String pushUrl = "http://" + localIp + ":" + Utils.getPort() + "/action?do=refresh&type=danmaku&path=" +
-                    URLEncoder.encode(danmakuItem.getDanmakuUrl(), "UTF-8");
+                    URLEncoder.encode(refreshPath, "UTF-8");
+            if (offsetMs != 0) {
+                DanmakuSpider.log("启用弹幕时间偏移: " + DanmakuUtils.formatOffsetLabel(offsetMs) + "，通过本地代理推送");
+            }
             DanmakuSpider.log("推送地址: " + pushUrl);
 
             String pushResp = "";
@@ -642,6 +659,14 @@ public class LeoDanmakuService {
                 Utils.safeShowToast(activity, "推送异常: " + e.getMessage());
             }
         }
+    }
+
+    private static String buildDanmakuRefreshPath(DanmakuItem danmakuItem, String localIp, int offsetMs) throws Exception {
+        String rawUrl = danmakuItem.getDanmakuUrl();
+        if (offsetMs == 0) return rawUrl;
+        return "http://" + localIp + ":9810/danmaku?url=" +
+                URLEncoder.encode(rawUrl, "UTF-8") +
+                "&t=" + System.currentTimeMillis();
     }
 
     // 辅助方法：从XML中解析弹幕总数

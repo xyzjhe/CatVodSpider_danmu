@@ -27,6 +27,9 @@ public class DanmakuManager {
         }
         lastDanmakuUrl = danmakuItem.getDanmakuUrl();
         lastDanmakuId = danmakuItem.getEpId();
+        if (danmakuItem.getEpId() != null) {
+            lastDanmakuItemMap.put(danmakuItem.getEpId(), danmakuItem);
+        }
 
         // 记录视频检测时间
         lastVideoDetectedTime = System.currentTimeMillis();
@@ -51,6 +54,23 @@ public class DanmakuManager {
         if (nextDanmakuItem != null) {
             DanmakuSpider.log("✅ 获取到下一个弹幕弹幕信息: " + nextDanmakuItem.toString());
             return nextDanmakuItem;
+        }
+
+        return null;
+    }
+
+    public static DanmakuItem getLastDanmakuItem() {
+        if (lastDanmakuId > 0) {
+            DanmakuItem item = lastDanmakuItemMap.get(lastDanmakuId);
+            if (item != null) return item;
+        }
+
+        if (lastDanmakuUrl != null && !lastDanmakuUrl.isEmpty()) {
+            for (DanmakuItem item : lastDanmakuItemMap.values()) {
+                if (item != null && lastDanmakuUrl.equals(item.getDanmakuUrl())) {
+                    return item;
+                }
+            }
         }
 
         return null;

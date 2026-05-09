@@ -146,7 +146,7 @@ public class DanmakuUIHelper {
 
                     // 副标题说明
                     TextView subtitle = new TextView(activity);
-                    subtitle.setText("配置弹幕搜索API地址");
+                    subtitle.setText("配置弹幕搜索API地址和时间偏移");
                     subtitle.setTextSize(13);
                     subtitle.setTextColor(TEXT_SECONDARY);
                     subtitle.setGravity(Gravity.CENTER);
@@ -189,6 +189,28 @@ public class DanmakuUIHelper {
 
                     inputContainer.addView(apiInput);
                     mainLayout.addView(inputContainer);
+
+                    TextView offsetLabel = new TextView(activity);
+                    offsetLabel.setText("弹幕时间偏移（秒，负数提前）");
+                    offsetLabel.setTextSize(14);
+                    offsetLabel.setTextColor(TEXT_PRIMARY);
+                    offsetLabel.setPadding(0, dpToPx(activity, 4), 0, dpToPx(activity, 6));
+                    mainLayout.addView(offsetLabel);
+
+                    EditText offsetInput = new EditText(activity);
+                    offsetInput.setHint("0 表示不偏移，例如 1.5 或 -0.8");
+                    offsetInput.setText(DanmakuUtils.formatOffsetSeconds(config.getDanmakuTimeOffsetMs()));
+                    offsetInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER |
+                            android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL |
+                            android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+                    offsetInput.setTextColor(TEXT_PRIMARY);
+                    offsetInput.setTextSize(14);
+                    offsetInput.setSingleLine(true);
+                    offsetInput.setPadding(dpToPx(activity, 12), dpToPx(activity, 10), dpToPx(activity, 12), dpToPx(activity, 10));
+                    offsetInput.setHintTextColor(TEXT_TERTIARY);
+                    applyTVInputFocusEffect(offsetInput, false);
+                    mainLayout.addView(offsetInput, new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
                     // 分割线 - 改进样式
                     View divider = new View(activity);
@@ -249,13 +271,26 @@ public class DanmakuUIHelper {
                                 return;
                             }
 
+                            int offsetMs;
+                            try {
+                                offsetMs = parseOffsetMs(offsetInput.getText().toString());
+                            } catch (NumberFormatException e) {
+                                Utils.safeShowToast(activity, "请输入有效的时间偏移");
+                                return;
+                            }
+
                             DanmakuConfig config = DanmakuConfigManager.getConfig( activity);
+                            int oldOffsetMs = config.getDanmakuTimeOffsetMs();
                             config.setApiUrls(newUrls);
+                            config.setDanmakuTimeOffsetMs(offsetMs);
                             DanmakuConfigManager.saveConfig(activity, config);
 
                             Utils.safeShowToast(activity, "配置已保存");
 
-                            DanmakuSpider.log("已保存API地址: " + newUrls);
+                            DanmakuSpider.log("已保存API地址: " + newUrls + "，弹幕时间偏移: " + DanmakuUtils.formatOffsetLabel(offsetMs));
+                            if (oldOffsetMs != offsetMs) {
+                                refreshCurrentDanmaku(activity, offsetMs);
+                            }
 
                             dialog.dismiss();
                         }
@@ -451,6 +486,136 @@ public class DanmakuUIHelper {
         });
     }
 
+    public static void showDanmakuOffsetDialog(Context ctx) {
+        if (!(ctx instanceof Activity)) {
+            DanmakuSpider.log("错误：Context不是Activity");
+            return;
+        }
+        Activity activity = (Activity) ctx;
+        if (activity.isFinishing() || activity.isDestroyed()) {
+            DanmakuSpider.log("Activity已销毁或正在销毁，不显示配置对话框");
+            return;
+        }
+
+        activity.runOnUiThread(() -> {
+            try {
+                if (activity.isFinishing() || activity.isDestroyed()) {
+                    DanmakuSpider.log("Activity已销毁，不显示配置对话框");
+                    return;
+                }
+
+                AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+
+                LinearLayout mainLayout = new LinearLayout(activity);
+                mainLayout.setOrientation(LinearLayout.VERTICAL);
+                mainLayout.setBackgroundColor(BACKGROUND_WHITE);
+                mainLayout.setPadding(dpToPx(activity, 24), dpToPx(activity, 20), dpToPx(activity, 24), dpToPx(activity, 20));
+
+                TextView title = new TextView(activity);
+                title.setText("弹幕时间偏移");
+                title.setTextSize(24);
+                title.setTextColor(PRIMARY_COLOR);
+                title.setGravity(Gravity.CENTER);
+                title.setPadding(0, dpToPx(activity, 8), 0, dpToPx(activity, 12));
+                title.setTypeface(null, android.graphics.Typeface.BOLD);
+                mainLayout.addView(title);
+
+                TextView subtitle = new TextView(activity);
+                subtitle.setText("正数延后，负数提前，单位秒");
+                subtitle.setTextSize(13);
+                subtitle.setTextColor(TEXT_SECONDARY);
+                subtitle.setGravity(Gravity.CENTER);
+                subtitle.setPadding(0, 0, 0, dpToPx(activity, 16));
+                mainLayout.addView(subtitle);
+
+                DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
+
+                EditText offsetInput = new EditText(activity);
+                offsetInput.setHint("例如 1.5 或 -0.8");
+                offsetInput.setText(DanmakuUtils.formatOffsetSeconds(config.getDanmakuTimeOffsetMs()));
+                offsetInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER |
+                        android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL |
+                        android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+                offsetInput.setTextColor(TEXT_PRIMARY);
+                offsetInput.setTextSize(16);
+                offsetInput.setSingleLine(true);
+                offsetInput.setGravity(Gravity.CENTER);
+                offsetInput.setPadding(dpToPx(activity, 12), dpToPx(activity, 12), dpToPx(activity, 12), dpToPx(activity, 12));
+                offsetInput.setHintTextColor(TEXT_TERTIARY);
+                applyTVInputFocusEffect(offsetInput, false);
+                mainLayout.addView(offsetInput, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+                TextView current = new TextView(activity);
+                current.setText("当前：" + DanmakuUtils.formatOffsetLabel(config.getDanmakuTimeOffsetMs()));
+                current.setTextSize(13);
+                current.setTextColor(TEXT_SECONDARY);
+                current.setGravity(Gravity.CENTER);
+                current.setPadding(0, dpToPx(activity, 12), 0, dpToPx(activity, 16));
+                mainLayout.addView(current);
+
+                LinearLayout btnLayout = new LinearLayout(activity);
+                btnLayout.setOrientation(LinearLayout.HORIZONTAL);
+                btnLayout.setGravity(Gravity.CENTER);
+
+                Button saveBtn = createStyledButton(activity, "保存", PRIMARY_COLOR);
+                Button resetBtn = createStyledButton(activity, "重置", ACCENT_COLOR);
+                Button cancelBtn = createStyledButtonWithBorder(activity, "取消", PRIMARY_COLOR);
+
+                LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
+                        0, dpToPx(activity, 44), 1);
+                btnParams.setMargins(dpToPx(activity, 6), 0, dpToPx(activity, 6), 0);
+
+                saveBtn.setLayoutParams(btnParams);
+                resetBtn.setLayoutParams(btnParams);
+                cancelBtn.setLayoutParams(btnParams);
+
+                btnLayout.addView(saveBtn);
+                btnLayout.addView(resetBtn);
+                btnLayout.addView(cancelBtn);
+                mainLayout.addView(btnLayout);
+
+                builder.setView(mainLayout);
+                AlertDialog dialog = builder.create();
+
+                saveBtn.setOnClickListener(v -> {
+                    try {
+                        int offsetMs = parseOffsetMs(offsetInput.getText().toString());
+                        int oldOffsetMs = config.getDanmakuTimeOffsetMs();
+                        config.setDanmakuTimeOffsetMs(offsetMs);
+                        DanmakuConfigManager.saveConfig(activity, config);
+                        Utils.safeShowToast(activity, "弹幕时间偏移已保存：" + DanmakuUtils.formatOffsetLabel(offsetMs));
+                        DanmakuSpider.log("弹幕时间偏移已保存：" + DanmakuUtils.formatOffsetLabel(offsetMs));
+                        if (oldOffsetMs != offsetMs) {
+                            refreshCurrentDanmaku(activity, offsetMs);
+                        }
+                        dialog.dismiss();
+                    } catch (NumberFormatException e) {
+                        Utils.safeShowToast(activity, "请输入有效的时间偏移");
+                    }
+                });
+
+                resetBtn.setOnClickListener(v -> {
+                    int oldOffsetMs = config.getDanmakuTimeOffsetMs();
+                    config.setDanmakuTimeOffsetMs(0);
+                    DanmakuConfigManager.saveConfig(activity, config);
+                    Utils.safeShowToast(activity, "弹幕时间偏移已重置");
+                    DanmakuSpider.log("弹幕时间偏移已重置");
+                    if (oldOffsetMs != 0) {
+                        refreshCurrentDanmaku(activity, 0);
+                    }
+                    dialog.dismiss();
+                });
+
+                cancelBtn.setOnClickListener(v -> dialog.dismiss());
+
+                safeShowDialog(activity, dialog);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+    }
+
     public static void showDanmakuStyleDialog(Context ctx) {
         if (!(ctx instanceof Activity)) {
             DanmakuSpider.log("错误：Context不是Activity");
@@ -517,6 +682,25 @@ public class DanmakuUIHelper {
         });
     }
 
+
+    private static int parseOffsetMs(String text) throws NumberFormatException {
+        if (TextUtils.isEmpty(text) || TextUtils.isEmpty(text.trim())) return 0;
+        double seconds = Double.parseDouble(text.trim());
+        if (seconds > 600) seconds = 600;
+        if (seconds < -600) seconds = -600;
+        return (int) Math.round(seconds * 1000);
+    }
+
+    private static void refreshCurrentDanmaku(Activity activity, int offsetMs) {
+        DanmakuItem item = DanmakuManager.getLastDanmakuItem();
+        if (item == null) {
+            DanmakuSpider.log("弹幕时间偏移已更新；当前没有可重推的弹幕，下一次选择/自动推送时生效");
+            return;
+        }
+
+        DanmakuSpider.log("弹幕时间偏移变更，刷新当前弹幕: " + item.getTitleWithEp() + " -> " + DanmakuUtils.formatOffsetLabel(offsetMs));
+        LeoDanmakuService.pushDanmakuDirect(item, activity, false, true);
+    }
 
     // 创建带边框的按钮 - 电视端优化版本
     private static Button createStyledButtonWithBorder(Activity activity, String text, int color) {

@@ -38,6 +38,10 @@ public class DanmakuConfig {
      * 静默模式，开启时不再弹出任何提示信息
      */
     public boolean silentMode;
+    /**
+     * 弹幕时间偏移，单位毫秒。正数延后，负数提前。
+     */
+    public int danmakuTimeOffsetMs;
 
     public DanmakuConfig() {
         // 设置默认值
@@ -48,6 +52,7 @@ public class DanmakuConfig {
         autoPushEnabled = false;
         danmakuStyle = "模板一";
         silentMode = true;
+        danmakuTimeOffsetMs = 0;
     }
 
     public void updateFromJson(JSONObject json) {
@@ -72,6 +77,13 @@ public class DanmakuConfig {
         }
         if (json.has("silentMode")) {
             setSilentMode(json.optBoolean("silentMode", silentMode));
+        }
+        if (json.has("danmakuTimeOffsetMs")) {
+            setDanmakuTimeOffsetMs(json.optInt("danmakuTimeOffsetMs", danmakuTimeOffsetMs));
+        } else if (json.has("danmakuOffsetMs")) {
+            setDanmakuTimeOffsetMs(json.optInt("danmakuOffsetMs", danmakuTimeOffsetMs));
+        } else if (json.has("danmakuOffset")) {
+            setDanmakuTimeOffsetMs((int) Math.round(json.optDouble("danmakuOffset", danmakuTimeOffsetMs / 1000.0) * 1000));
         }
     }
 
@@ -129,5 +141,17 @@ public class DanmakuConfig {
 
     public void setSilentMode(boolean silentMode) {
         this.silentMode = silentMode;
+    }
+
+    public int getDanmakuTimeOffsetMs() {
+        if (danmakuTimeOffsetMs > 600000) return 600000;
+        if (danmakuTimeOffsetMs < -600000) return -600000;
+        return danmakuTimeOffsetMs;
+    }
+
+    public void setDanmakuTimeOffsetMs(int danmakuTimeOffsetMs) {
+        if (danmakuTimeOffsetMs > 600000) danmakuTimeOffsetMs = 600000;
+        if (danmakuTimeOffsetMs < -600000) danmakuTimeOffsetMs = -600000;
+        this.danmakuTimeOffsetMs = danmakuTimeOffsetMs;
     }
 }

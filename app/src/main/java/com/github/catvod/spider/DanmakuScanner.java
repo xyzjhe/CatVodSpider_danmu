@@ -1520,6 +1520,7 @@ public class DanmakuScanner {
             optionsList.add("💬 弹幕配置");
             optionsList.add("🎨 布局配置");
             optionsList.add("✨ 弹幕 UI 风格");
+            optionsList.add("⏱ 弹幕时间偏移");
             optionsList.add("📝 查看日志");
 
             // 只有当Go代理资源文件存在时才添加相关按钮
@@ -1588,7 +1589,11 @@ public class DanmakuScanner {
                             DanmakuSpider.log("[菜单] 打开弹幕 UI 风格");
                             DanmakuUIHelper.showDanmakuStyleDialog(activity);
                             break;
-                        case 6: // 查看日志（统一日志查看器）
+                        case 6: // 弹幕时间偏移
+                            DanmakuSpider.log("[菜单] 打开弹幕时间偏移");
+                            DanmakuUIHelper.showDanmakuOffsetDialog(activity);
+                            break;
+                        case 7: // 查看日志（统一日志查看器）
                             DanmakuSpider.log("[菜单] 打开统一日志查看器");
                             DanmakuUIHelper.showUnifiedLogDialog(activity);
                             break;
@@ -1597,7 +1602,7 @@ public class DanmakuScanner {
                     // 处理Go代理相关按钮（如果存在）
                     if (isGoProxyExists) {
                         switch (which) {
-                            case 7: // Go 代理状态
+                            case 8: // Go 代理状态
                                 String status = GoProxyManager.isProxyRunning.get() ? "运行中" : "已停止";
                                 String health = GoProxyManager.isProxyHealthy() ? "健康" : "异常";
                                 String toastMsg = GoProxyManager.isProxyRunning.get() ?
@@ -1607,7 +1612,7 @@ public class DanmakuScanner {
                                 DanmakuSpider.log("[菜单] 查看Go代理状态: " + toastMsg);
                                 break;
 
-                            case 8: // 重启 Go 代理
+                            case 9: // 重启 Go 代理
                                 DanmakuSpider.log("[菜单] 用户触发Go代理重启");
                                 GoProxyManager.isProxyRunning.set(false);
                                 GoProxyManager.startGoProxyOnce(activity.getApplicationContext());

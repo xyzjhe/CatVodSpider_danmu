@@ -200,6 +200,11 @@ public class DanmakuSpider extends Spider {
                     config.isSilentMode() ? "已开启" : "已关闭");
             list.put(silentModeVod);
 
+            // 创建弹幕时间偏移按钮
+            JSONObject offsetVod = createVod("danmaku_offset", "弹幕时间偏移", "",
+                    DanmakuUtils.formatOffsetLabel(config.getDanmakuTimeOffsetMs()));
+            list.put(offsetVod);
+
             // 创建查看日志按钮（统一日志查看器）
             JSONObject logVod = createVod("log", "查看日志", "", "弹幕/Go代理日志");
             list.put(logVod);
@@ -284,6 +289,8 @@ public class DanmakuSpider extends Spider {
                                     refreshCategoryContent(ctx);
                                 } else if (id.equals("log")) {
                                     DanmakuUIHelper.showUnifiedLogDialog(ctx);
+                                } else if (id.equals("danmaku_offset")) {
+                                    DanmakuUIHelper.showDanmakuOffsetDialog(ctx);
                                 } else if (id.equals("lp_config")) {
                                     DanmakuUIHelper.showLpConfigDialog(ctx);
                                 } else if (id.equals("danmaku_style")) {
@@ -328,6 +335,7 @@ public class DanmakuSpider extends Spider {
             vod.put("vod_id", id);
             vod.put("vod_name", id.equals("auto_push") ? "自动推送弹幕" :
                     id.equals("silent_mode") ? "静默模式" :
+                    id.equals("danmaku_offset") ? "弹幕时间偏移" :
                     id.equals("log") ? "查看日志" : id.equals("lp_config") ? "布局配置" :
                             id.equals("danmaku_style") ? "弹幕 UI 风格" :
                             id.equals("proxy_status") ? "Go 代理状态" :
@@ -340,6 +348,7 @@ public class DanmakuSpider extends Spider {
                     (config.isAutoPushEnabled() ? "已开启" : "已关闭") :
                     id.equals("silent_mode") ?
                             (config.isSilentMode() ? "已开启" : "已关闭") :
+                    id.equals("danmaku_offset") ? DanmakuUtils.formatOffsetLabel(config.getDanmakuTimeOffsetMs()) :
                     id.equals("log") ? "弹幕/Go 代理日志" : id.equals("lp_config") ? "调整弹窗大小和透明度" :
                             id.equals("danmaku_style") ? "当前：" + config.getDanmakuStyle() :
                             id.equals("proxy_status") ? proxyStatusText :
@@ -372,6 +381,8 @@ public class DanmakuSpider extends Spider {
                         item.put("vod_remarks", config.isAutoPushEnabled() ? "已开启" : "已关闭");
                     } else if ("silent_mode".equals(item.getString("vod_id"))) {
                         item.put("vod_remarks", config.isSilentMode() ? "已开启" : "已关闭");
+                    } else if ("danmaku_offset".equals(item.getString("vod_id"))) {
+                        item.put("vod_remarks", DanmakuUtils.formatOffsetLabel(config.getDanmakuTimeOffsetMs()));
                     } else if ("danmaku_style".equals(item.getString("vod_id"))) {
                         item.put("vod_remarks", "当前：" + config.getDanmakuStyle());
                     } else if ("proxy_status".equals(item.getString("vod_id"))) {
