@@ -64,13 +64,24 @@ public class DanmakuSpider extends Spider {
         DanmakuConfig config = DanmakuConfigManager.loadConfig(context);
         if (!TextUtils.isEmpty(extend)) {
             if (extend.startsWith("http")) {
-                config.getApiUrls().addAll(Arrays.asList(extend.split(",")));
+                config.addApiUrls(Arrays.asList(extend.split(",")));
             } else if (extend.startsWith("{") && extend.endsWith("}")) {
                 try {
                     JSONObject jsonObject = new JSONObject(extend);
                     config.updateFromJson(jsonObject);
                 } catch (Exception e) {
                     log("解析JSON格式配置失败: " + e.getMessage());
+                }
+            } else if (extend.startsWith("[") && extend.endsWith("]")) {
+                try {
+                    JSONArray jsonArray = new JSONArray(extend);
+                    List<String> entries = new java.util.ArrayList<>();
+                    for (int i = 0; i < jsonArray.length(); i++) {
+                        entries.add(jsonArray.optString(i));
+                    }
+                    config.addApiUrls(entries);
+                } catch (Exception e) {
+                    log("解析JSON数组格式配置失败: " + e.getMessage());
                 }
             }
         }

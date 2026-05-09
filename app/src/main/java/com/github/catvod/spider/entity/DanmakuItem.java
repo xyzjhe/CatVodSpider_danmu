@@ -6,6 +6,7 @@ public class DanmakuItem {
     public String shortTitle;
     public Integer epId;
     public String apiBase;
+    public String apiSourceName;
 
     public String from;
 
@@ -55,6 +56,14 @@ public class DanmakuItem {
         this.apiBase = apiBase;
     }
 
+    public String getApiSourceName() {
+        return apiSourceName;
+    }
+
+    public void setApiSourceName(String apiSourceName) {
+        this.apiSourceName = apiSourceName;
+    }
+
     public String getFrom() {
         return from;
     }
@@ -88,6 +97,7 @@ public class DanmakuItem {
         sb.append(", shortTitle='").append(shortTitle).append('\'');
         sb.append(", epId=").append(epId);
         sb.append(", apiBase='").append(apiBase).append('\'');
+        sb.append(", apiSourceName='").append(apiSourceName).append('\'');
         sb.append(", from='").append(from).append('\'');
         sb.append(", animeTitle='").append(animeTitle).append('\'');
         sb.append('}');

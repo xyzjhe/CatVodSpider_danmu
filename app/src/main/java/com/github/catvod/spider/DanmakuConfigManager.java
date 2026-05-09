@@ -31,19 +31,32 @@ public class DanmakuConfigManager {
     public static DanmakuConfig loadConfig(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String json = prefs.getString(KEY_CONFIG_JSON, null);
+        DanmakuConfig config;
         if (json != null) {
-            return gson.fromJson(json, DanmakuConfig.class);
+            config = gson.fromJson(json, DanmakuConfig.class);
         } else {
             // 迁移旧配置
-            return migrateOldConfig(context);
+            config = migrateOldConfig(context);
         }
+        if (config == null) config = new DanmakuConfig();
+        config.normalize();
+        return config;
     }
 
     public static void saveConfig(Context context, DanmakuConfig config) {
+        if (config == null) config = new DanmakuConfig();
+        config.normalize();
         sDanmakuConfig = config;
         SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         String json = gson.toJson(config);
         prefs.edit().putString(KEY_CONFIG_JSON, json).apply();
+    }
+
+    public static synchronized void recordApiSourceResult(Context context, String url, boolean success, long latencyMs, String error) {
+        if (context == null || url == null) return;
+        DanmakuConfig config = loadConfig(context);
+        config.recordApiSourceResult(url, success, latencyMs, error);
+        saveConfig(context, config);
     }
 
     private static DanmakuConfig migrateOldConfig(Context context) {

@@ -11,6 +11,7 @@ public class DanmakuManager {
     public static String lastManualDanmakuUrl = ""; // 上次手动选择的弹幕URL
     public static String lastDanmakuUrl = ""; // 上次弹幕URL
     public static ConcurrentMap<Integer, DanmakuItem> lastDanmakuItemMap = new ConcurrentHashMap<>();
+    public static ConcurrentMap<String, DanmakuItem> lastDanmakuUrlItemMap = new ConcurrentHashMap<>();
     public static int lastDanmakuId = -1;          // 上次的弹幕ID
     public static boolean hasAutoSearched = false; // 是否已自动搜索过
     public static String lastProcessedTitle = "";  // 上次处理的标题
@@ -29,6 +30,9 @@ public class DanmakuManager {
         lastDanmakuId = danmakuItem.getEpId();
         if (danmakuItem.getEpId() != null) {
             lastDanmakuItemMap.put(danmakuItem.getEpId(), danmakuItem);
+        }
+        if (danmakuItem.getDanmakuUrl() != null) {
+            lastDanmakuUrlItemMap.put(danmakuItem.getDanmakuUrl(), danmakuItem);
         }
 
         // 记录视频检测时间
@@ -86,5 +90,6 @@ public class DanmakuManager {
         lastManualDanmakuUrl = "";
         lastDanmakuUrl = "";
         lastDanmakuItemMap.clear();
+        lastDanmakuUrlItemMap.clear();
     }
 }

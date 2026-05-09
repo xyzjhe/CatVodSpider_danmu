@@ -8,6 +8,17 @@ import javax.net.ssl.HttpsURLConnection;
 
 public class NetworkUtils {
 
+    public static class HttpResult {
+        public int code = -1;
+        public String body = "";
+        public String error = "";
+        public long latencyMs = 0;
+
+        public boolean isOk() {
+            return code >= 200 && code < 300;
+        }
+    }
+
     public static String robustHttpGet(String urlStr) {
         for (int retry = 0; retry < 2; retry++) {
             try {
@@ -62,6 +73,52 @@ public class NetworkUtils {
             }
         }
         return "";
+    }
+
+    public static HttpResult httpGet(String urlStr, int timeoutMs) {
+        HttpResult result = new HttpResult();
+        long start = System.currentTimeMillis();
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL(urlStr);
+            conn = (HttpURLConnection) url.openConnection();
+
+            if (conn instanceof HttpsURLConnection) {
+                HttpsURLConnection httpsConn = (HttpsURLConnection) conn;
+                try {
+                    httpsConn.setSSLSocketFactory(new TLSSocketFactory());
+                } catch (Exception e) {}
+            }
+
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(timeoutMs);
+            conn.setReadTimeout(timeoutMs);
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0");
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Accept", "application/json,text/plain,*/*");
+            conn.setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+            conn.setRequestProperty("Connection", "close");
+            conn.setRequestProperty("Cache-Control", "no-cache");
+
+            result.code = conn.getResponseCode();
+            InputStream is = result.isOk() ? conn.getInputStream() : conn.getErrorStream();
+            if (is != null) {
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                byte[] buffer = new byte[1024];
+                int len;
+                while ((len = is.read(buffer)) != -1) {
+                    baos.write(buffer, 0, len);
+                }
+                is.close();
+                result.body = new String(baos.toByteArray(), "UTF-8");
+            }
+        } catch (Exception e) {
+            result.error = e.getMessage() != null ? e.getMessage() : e.getClass().getName();
+        } finally {
+            result.latencyMs = System.currentTimeMillis() - start;
+            if (conn != null) conn.disconnect();
+        }
+        return result;
     }
 
     public static String getLocalIpAddress() {

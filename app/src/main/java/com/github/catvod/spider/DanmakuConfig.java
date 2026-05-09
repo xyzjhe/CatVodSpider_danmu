@@ -1,9 +1,14 @@
 package com.github.catvod.spider;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
 
-import java.util.Arrays;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -14,6 +19,10 @@ public class DanmakuConfig {
      * 弹幕API地址
      */
     public Set<String> apiUrls;
+    /**
+     * 可维护的弹幕API源列表，保留启停、优先级和最近测试状态。
+     */
+    public List<DanmakuApiSource> apiSources;
     /**
      * 弹幕搜索框宽度比例
      */
@@ -45,7 +54,8 @@ public class DanmakuConfig {
 
     public DanmakuConfig() {
         // 设置默认值
-        apiUrls = new HashSet<>();
+        apiUrls = new LinkedHashSet<>();
+        apiSources = new ArrayList<>();
         lpWidth = 0.9f;
         lpHeight = 0.85f;
         lpAlpha = 0.9f;
@@ -58,7 +68,10 @@ public class DanmakuConfig {
     public void updateFromJson(JSONObject json) {
         if (json == null) return;
         if (json.has("apiUrl")) {
-            apiUrls.addAll(Arrays.asList(json.optString("apiUrl").split(",")));
+            addApiUrls(parseJsonApiEntries(json.opt("apiUrl")));
+        }
+        if (json.has("apiUrls")) {
+            addApiUrls(parseJsonApiEntries(json.opt("apiUrls")));
         }
         if (json.has("lpWidth")) {
             setLpWidth((float) json.optDouble("lpWidth", lpWidth));
@@ -88,11 +101,212 @@ public class DanmakuConfig {
     }
 
     public Set<String> getApiUrls() {
+        normalize();
         return apiUrls;
     }
 
+    public List<String> getApiUrlEntries() {
+        normalize();
+        List<String> entries = new ArrayList<>();
+        for (DanmakuApiSource source : apiSources) {
+            if (source != null) entries.add(source.toConfigEntry());
+        }
+        return entries;
+    }
+
     public void setApiUrls(Set<String> apiUrls) {
-        this.apiUrls = apiUrls;
+        setApiUrls((Collection<String>) apiUrls);
+    }
+
+    public void setApiUrls(Collection<String> urls) {
+        normalize();
+        List<DanmakuApiSource> oldSources = new ArrayList<>(apiSources);
+        apiSources.clear();
+        apiUrls.clear();
+        addApiUrls(urls, oldSources);
+        normalize();
+    }
+
+    public void addApiUrls(Collection<String> urls) {
+        normalize();
+        addApiUrls(urls, new ArrayList<>(apiSources));
+        normalize();
+    }
+
+    private void addApiUrls(Collection<String> urls, List<DanmakuApiSource> oldSources) {
+        if (urls == null) return;
+        for (String rawEntry : urls) {
+            DanmakuApiSource.ParsedEntry entry = DanmakuApiSource.parseEntry(rawEntry);
+            String url = entry.url;
+            if (!isValidApiUrl(url) || apiUrls.contains(url)) continue;
+
+            DanmakuApiSource oldSource = findSource(oldSources, url);
+            DanmakuApiSource source = oldSource != null ? oldSource : new DanmakuApiSource(url, true, apiSources.size());
+            source.url = url;
+            if (entry.hasName || source.name == null) {
+                source.name = entry.name;
+            }
+            source.priority = apiSources.size();
+            apiSources.add(source);
+            apiUrls.add(url);
+        }
+    }
+
+    public List<DanmakuApiSource> getApiSources() {
+        normalize();
+        return apiSources;
+    }
+
+    public List<DanmakuApiSource> getEnabledApiSources() {
+        normalize();
+        List<DanmakuApiSource> result = new ArrayList<>();
+        for (DanmakuApiSource source : apiSources) {
+            if (source != null && source.isUsable()) result.add(source);
+        }
+        return result;
+    }
+
+    public Set<String> getEnabledApiUrls() {
+        Set<String> urls = new LinkedHashSet<>();
+        for (DanmakuApiSource source : getEnabledApiSources()) {
+            urls.add(source.url);
+        }
+        return urls;
+    }
+
+    public DanmakuApiSource findApiSource(String rawUrl) {
+        normalize();
+        return findSource(apiSources, DanmakuApiSource.parseEntry(rawUrl).url);
+    }
+
+    public void setApiSourceName(String rawUrl, String name) {
+        DanmakuApiSource source = findApiSource(rawUrl);
+        if (source != null) source.name = DanmakuApiSource.normalizeName(name);
+    }
+
+    public void setApiSourceEnabled(String rawUrl, boolean enabled) {
+        DanmakuApiSource source = findApiSource(rawUrl);
+        if (source != null) source.enabled = enabled;
+    }
+
+    public void removeApiSource(String rawUrl) {
+        normalize();
+        String url = DanmakuApiSource.parseEntry(rawUrl).url;
+        for (int i = apiSources.size() - 1; i >= 0; i--) {
+            DanmakuApiSource source = apiSources.get(i);
+            if (source != null && url.equals(source.url)) {
+                apiSources.remove(i);
+                break;
+            }
+        }
+        normalize();
+    }
+
+    public void moveApiSource(String rawUrl, int direction) {
+        normalize();
+        String url = DanmakuApiSource.parseEntry(rawUrl).url;
+        for (int i = 0; i < apiSources.size(); i++) {
+            DanmakuApiSource source = apiSources.get(i);
+            if (source != null && url.equals(source.url)) {
+                int target = i + direction;
+                if (target >= 0 && target < apiSources.size()) {
+                    Collections.swap(apiSources, i, target);
+                    rebuildApiUrlIndex();
+                }
+                return;
+            }
+        }
+    }
+
+    public void recordApiSourceResult(String rawUrl, boolean success, long latencyMs, String error) {
+        DanmakuApiSource source = findApiSource(rawUrl);
+        if (source == null) return;
+        if (success) source.markSuccess(latencyMs);
+        else source.markFailure(latencyMs, error);
+    }
+
+    public void normalize() {
+        if (apiUrls == null) apiUrls = new LinkedHashSet<>();
+        if (apiSources == null) apiSources = new ArrayList<>();
+        if (danmakuStyle == null) danmakuStyle = "模板一";
+
+        List<DanmakuApiSource> oldSources = new ArrayList<>(apiSources);
+        if (apiSources.isEmpty() && !apiUrls.isEmpty()) {
+            Set<String> legacyUrls = new LinkedHashSet<>(apiUrls);
+            apiSources = new ArrayList<>();
+            apiUrls.clear();
+            addApiUrls(legacyUrls, oldSources);
+        }
+
+        List<DanmakuApiSource> validSources = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (DanmakuApiSource source : apiSources) {
+            if (source == null) continue;
+            DanmakuApiSource.ParsedEntry entry = DanmakuApiSource.parseEntry(source.url);
+            source.url = entry.url;
+            if (entry.hasName) source.name = entry.name;
+            source.name = DanmakuApiSource.normalizeName(source.name);
+            if (!isValidApiUrl(source.url) || seen.contains(source.url)) continue;
+            if (source.lastLatencyMs == 0 && source.lastTestTimeMs == 0 && source.lastSuccessTimeMs == 0) {
+                source.lastLatencyMs = -1;
+            }
+            if (source.lastError == null) source.lastError = "";
+            validSources.add(source);
+            seen.add(source.url);
+        }
+
+        Collections.sort(validSources, new Comparator<DanmakuApiSource>() {
+            @Override
+            public int compare(DanmakuApiSource left, DanmakuApiSource right) {
+                return left.priority - right.priority;
+            }
+        });
+
+        apiSources = validSources;
+        rebuildApiUrlIndex();
+    }
+
+    private void rebuildApiUrlIndex() {
+        apiUrls.clear();
+        for (int i = 0; i < apiSources.size(); i++) {
+            DanmakuApiSource source = apiSources.get(i);
+            source.priority = i;
+            apiUrls.add(source.url);
+        }
+    }
+
+    private static boolean isValidApiUrl(String url) {
+        return url != null && (url.startsWith("http://") || url.startsWith("https://"));
+    }
+
+    private static DanmakuApiSource findSource(List<DanmakuApiSource> sources, String url) {
+        if (sources == null || url == null) return null;
+        for (DanmakuApiSource source : sources) {
+            if (source != null && url.equals(source.url)) return source;
+        }
+        return null;
+    }
+
+    private static List<String> parseJsonApiEntries(Object value) {
+        List<String> entries = new ArrayList<>();
+        if (value == null) return entries;
+
+        if (value instanceof JSONArray) {
+            JSONArray array = (JSONArray) value;
+            for (int i = 0; i < array.length(); i++) {
+                String entry = array.optString(i);
+                if (entry != null) entries.add(entry);
+            }
+            return entries;
+        }
+
+        String text = String.valueOf(value);
+        if (text == null) return entries;
+        String[] parts = text.split(",");
+        for (String part : parts) {
+            if (part != null) entries.add(part.trim());
+        }
+        return entries;
     }
 
     public float getLpWidth() {

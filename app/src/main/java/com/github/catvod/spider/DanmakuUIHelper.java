@@ -12,6 +12,8 @@ import android.os.Looper;
 import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -28,9 +30,12 @@ import okhttp3.Response;
 
 import java.io.InputStream;
 import java.net.URLEncoder;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 public class DanmakuUIHelper {
@@ -102,6 +107,7 @@ public class DanmakuUIHelper {
      * 当前选中的标签索引
      */
     private static List<DanmakuItem> currentItems = new ArrayList<>();
+    private static String currentSearchKeyword = "";
 
 
     // 显示配置对话框
@@ -146,7 +152,7 @@ public class DanmakuUIHelper {
 
                     // 副标题说明
                     TextView subtitle = new TextView(activity);
-                    subtitle.setText("配置弹幕搜索API地址和时间偏移");
+                    subtitle.setText("管理弹幕API源和时间偏移");
                     subtitle.setTextSize(13);
                     subtitle.setTextColor(TEXT_SECONDARY);
                     subtitle.setGravity(Gravity.CENTER);
@@ -177,8 +183,8 @@ public class DanmakuUIHelper {
                     DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
 
                     EditText apiInput = new EditText(activity);
-                    apiInput.setText(TextUtils.join("\n", config.getApiUrls()));
-                    apiInput.setHint("每行一个API地址\n例如: https://example.com/danmu");
+                    apiInput.setText(TextUtils.join("\n", config.getApiUrlEntries()));
+                    apiInput.setHint("每行一个API地址，可用 | 设置别名\n例如: https://example.com/danmu|公益源");
                     apiInput.setMinLines(4);
                     apiInput.setMaxLines(7);
                     apiInput.setBackgroundColor(BACKGROUND_WHITE);
@@ -189,6 +195,20 @@ public class DanmakuUIHelper {
 
                     inputContainer.addView(apiInput);
                     mainLayout.addView(inputContainer);
+
+                    TextView apiSummary = new TextView(activity);
+                    apiSummary.setText(buildApiSourceSummary(config));
+                    apiSummary.setTextSize(13);
+                    apiSummary.setTextColor(TEXT_SECONDARY);
+                    apiSummary.setPadding(0, 0, 0, dpToPx(activity, 8));
+                    mainLayout.addView(apiSummary);
+
+                    Button apiManagerBtn = createStyledButton(activity, "API源管理", TERTIARY_COLOR);
+                    LinearLayout.LayoutParams apiManagerParams = new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(activity, 42));
+                    apiManagerParams.setMargins(0, 0, 0, dpToPx(activity, 12));
+                    apiManagerBtn.setLayoutParams(apiManagerParams);
+                    mainLayout.addView(apiManagerBtn);
 
                     TextView offsetLabel = new TextView(activity);
                     offsetLabel.setText("弹幕时间偏移（秒，负数提前）");
@@ -258,10 +278,11 @@ public class DanmakuUIHelper {
                         public void onClick(View v) {
                             String text = apiInput.getText().toString();
                             String[] lines = text.split("\n");
-                            Set<String> newUrls = new HashSet<>();
+                            Set<String> newUrls = new LinkedHashSet<>();
                             for (String line : lines) {
                                 String trimmed = line.trim();
-                                if (!TextUtils.isEmpty(trimmed) && trimmed.startsWith("http")) {
+                                String url = DanmakuApiSource.normalizeUrl(trimmed);
+                                if (!TextUtils.isEmpty(url) && (url.startsWith("http://") || url.startsWith("https://"))) {
                                     newUrls.add(trimmed);
                                 }
                             }
@@ -316,6 +337,14 @@ public class DanmakuUIHelper {
                         }
                     });
 
+                    apiManagerBtn.setOnClickListener(new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            showApiSourceManagerDialog(activity);
+                            dialog.dismiss();
+                        }
+                    });
+
                     cancelBtn.setOnClickListener(new View.OnClickListener() {
                         @Override
                         public void onClick(View v) {
@@ -329,6 +358,385 @@ public class DanmakuUIHelper {
                 }
             }
         });
+    }
+
+    public static void showApiSourceManagerDialog(Context ctx) {
+        if (!(ctx instanceof Activity)) {
+            DanmakuSpider.log("错误：Context不是Activity");
+            return;
+        }
+        Activity activity = (Activity) ctx;
+        if (activity.isFinishing() || activity.isDestroyed()) {
+            DanmakuSpider.log("Activity已销毁或正在销毁，不显示API源管理对话框");
+            return;
+        }
+
+        activity.runOnUiThread(() -> {
+            try {
+                if (activity.isFinishing() || activity.isDestroyed()) {
+                    DanmakuSpider.log("Activity已销毁，不显示API源管理对话框");
+                    return;
+                }
+
+                AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+
+                LinearLayout mainLayout = new LinearLayout(activity);
+                mainLayout.setOrientation(LinearLayout.VERTICAL);
+                mainLayout.setBackgroundColor(BACKGROUND_WHITE);
+                mainLayout.setPadding(dpToPx(activity, 20), dpToPx(activity, 18), dpToPx(activity, 20), dpToPx(activity, 18));
+
+                TextView title = new TextView(activity);
+                title.setText("API源管理");
+                title.setTextSize(24);
+                title.setTextColor(PRIMARY_COLOR);
+                title.setGravity(Gravity.CENTER);
+                title.setTypeface(null, android.graphics.Typeface.BOLD);
+                title.setPadding(0, dpToPx(activity, 4), 0, dpToPx(activity, 8));
+                mainLayout.addView(title);
+
+                TextView summary = new TextView(activity);
+                summary.setTextSize(13);
+                summary.setTextColor(TEXT_SECONDARY);
+                summary.setGravity(Gravity.CENTER);
+                summary.setPadding(0, 0, 0, dpToPx(activity, 10));
+                mainLayout.addView(summary);
+
+                LinearLayout addLayout = new LinearLayout(activity);
+                addLayout.setOrientation(LinearLayout.HORIZONTAL);
+                addLayout.setGravity(Gravity.CENTER);
+                addLayout.setPadding(0, 0, 0, dpToPx(activity, 10));
+
+                EditText addInput = new EditText(activity);
+                addInput.setHint("新增API地址，可写 URL|别名");
+                addInput.setSingleLine(true);
+                addInput.setTextSize(13);
+                addInput.setTextColor(TEXT_PRIMARY);
+                addInput.setHintTextColor(TEXT_TERTIARY);
+                addInput.setPadding(dpToPx(activity, 12), dpToPx(activity, 10), dpToPx(activity, 12), dpToPx(activity, 10));
+                applyTVInputFocusEffect(addInput, false);
+                LinearLayout.LayoutParams addInputParams = new LinearLayout.LayoutParams(0, dpToPx(activity, 44), 1);
+                addInputParams.setMargins(0, 0, dpToPx(activity, 8), 0);
+                addLayout.addView(addInput, addInputParams);
+
+                Button addBtn = createStyledButton(activity, "新增", PRIMARY_COLOR);
+                addLayout.addView(addBtn, new LinearLayout.LayoutParams(dpToPx(activity, 76), dpToPx(activity, 44)));
+                mainLayout.addView(addLayout);
+
+                ScrollView scrollView = new ScrollView(activity);
+                LinearLayout listLayout = new LinearLayout(activity);
+                listLayout.setOrientation(LinearLayout.VERTICAL);
+                scrollView.addView(listLayout);
+                LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, 0, 1);
+                mainLayout.addView(scrollView, scrollParams);
+
+                LinearLayout bottomLayout = new LinearLayout(activity);
+                bottomLayout.setOrientation(LinearLayout.HORIZONTAL);
+                bottomLayout.setGravity(Gravity.CENTER);
+                bottomLayout.setPadding(0, dpToPx(activity, 12), 0, 0);
+
+                Button testAllBtn = createStyledButton(activity, "全部测试", TERTIARY_COLOR);
+                Button closeBtn = createStyledButtonWithBorder(activity, "关闭", PRIMARY_COLOR);
+                LinearLayout.LayoutParams bottomBtnParams = new LinearLayout.LayoutParams(0, dpToPx(activity, 44), 1);
+                bottomBtnParams.setMargins(dpToPx(activity, 6), 0, dpToPx(activity, 6), 0);
+                bottomLayout.addView(testAllBtn, bottomBtnParams);
+                bottomLayout.addView(closeBtn, new LinearLayout.LayoutParams(0, dpToPx(activity, 44), 1));
+                mainLayout.addView(bottomLayout);
+
+                builder.setView(mainLayout);
+                AlertDialog dialog = builder.create();
+
+                final Runnable[] refresh = new Runnable[1];
+                refresh[0] = new Runnable() {
+                    @Override
+                    public void run() {
+                        DanmakuConfig latest = DanmakuConfigManager.getConfig(activity);
+                        summary.setText(buildApiSourceSummary(latest));
+                        renderApiSourceList(activity, listLayout, latest, refresh[0]);
+                    }
+                };
+
+                addBtn.setOnClickListener(v -> {
+                    String entry = addInput.getText().toString();
+                    String url = DanmakuApiSource.parseEntry(entry).url;
+                    if (TextUtils.isEmpty(url) || !(url.startsWith("http://") || url.startsWith("https://"))) {
+                        Utils.safeShowToast(activity, "请输入有效的API地址");
+                        return;
+                    }
+
+                    DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
+                    if (config.findApiSource(url) != null) {
+                        Utils.safeShowToast(activity, "API源已存在");
+                        return;
+                    }
+                    config.addApiUrls(java.util.Collections.singletonList(entry));
+                    DanmakuConfigManager.saveConfig(activity, config);
+                    addInput.setText("");
+                    Utils.safeShowToast(activity, "API源已新增");
+                    refresh[0].run();
+                });
+
+                testAllBtn.setOnClickListener(v -> testAllApiSources(activity, testAllBtn, refresh[0]));
+                closeBtn.setOnClickListener(v -> dialog.dismiss());
+
+                refresh[0].run();
+                safeShowDialog(activity, dialog);
+            } catch (Exception e) {
+                DanmakuSpider.log("显示API源管理失败: " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+    }
+
+    private static void renderApiSourceList(Activity activity, LinearLayout listLayout, DanmakuConfig config, Runnable refresh) {
+        listLayout.removeAllViews();
+        List<DanmakuApiSource> sources = config.getApiSources();
+        if (sources.isEmpty()) {
+            TextView empty = new TextView(activity);
+            empty.setText("暂无API源");
+            empty.setTextSize(14);
+            empty.setTextColor(TEXT_TERTIARY);
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(0, dpToPx(activity, 24), 0, dpToPx(activity, 24));
+            listLayout.addView(empty);
+            return;
+        }
+
+        for (int i = 0; i < sources.size(); i++) {
+            DanmakuApiSource source = sources.get(i);
+            final String sourceUrl = source.url;
+
+            LinearLayout itemLayout = new LinearLayout(activity);
+            itemLayout.setOrientation(LinearLayout.VERTICAL);
+            itemLayout.setPadding(dpToPx(activity, 12), dpToPx(activity, 10), dpToPx(activity, 12), dpToPx(activity, 10));
+            itemLayout.setBackground(createRoundedBackgroundDrawable(BACKGROUND_LIGHT));
+            LinearLayout.LayoutParams itemParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            itemParams.setMargins(0, 0, 0, dpToPx(activity, 10));
+            listLayout.addView(itemLayout, itemParams);
+
+            TextView urlView = new TextView(activity);
+            String sourceLabel = source.getDisplayName("源" + (source.priority + 1));
+            String sourceTitle = (source.priority + 1) + ". " + sourceLabel;
+            if (!TextUtils.isEmpty(source.name)) {
+                sourceTitle += "\n" + sourceUrl;
+            } else {
+                sourceTitle += "  " + sourceUrl;
+            }
+            urlView.setText(sourceTitle);
+            urlView.setTextSize(14);
+            urlView.setTextColor(TEXT_PRIMARY);
+            urlView.setSingleLine(false);
+            itemLayout.addView(urlView);
+
+            TextView statusView = new TextView(activity);
+            statusView.setText(formatApiSourceStatus(source));
+            statusView.setTextSize(12);
+            statusView.setTextColor(source.enabled ? TEXT_SECONDARY : TEXT_TERTIARY);
+            statusView.setPadding(0, dpToPx(activity, 6), 0, dpToPx(activity, 8));
+            itemLayout.addView(statusView);
+
+            LinearLayout actionLayout = new LinearLayout(activity);
+            actionLayout.setOrientation(LinearLayout.HORIZONTAL);
+            actionLayout.setGravity(Gravity.CENTER);
+
+            Button toggleBtn = createStyledButton(activity, source.enabled ? "停用" : "启用",
+                    source.enabled ? ACCENT_COLOR : TERTIARY_COLOR);
+            Button aliasBtn = createStyledButtonWithBorder(activity, "别名", PRIMARY_COLOR);
+            Button testBtn = createStyledButton(activity, "测试", PRIMARY_COLOR);
+            Button upBtn = createStyledButtonWithBorder(activity, "上移", PRIMARY_COLOR);
+            Button downBtn = createStyledButtonWithBorder(activity, "下移", PRIMARY_COLOR);
+            Button deleteBtn = createStyledButtonWithBorder(activity, "删除", ACCENT_COLOR);
+
+            actionLayout.addView(toggleBtn, createSourceButtonParams(activity));
+            actionLayout.addView(aliasBtn, createSourceButtonParams(activity));
+            actionLayout.addView(testBtn, createSourceButtonParams(activity));
+            actionLayout.addView(upBtn, createSourceButtonParams(activity));
+            actionLayout.addView(downBtn, createSourceButtonParams(activity));
+            actionLayout.addView(deleteBtn, createSourceButtonParams(activity));
+            itemLayout.addView(actionLayout);
+
+            toggleBtn.setOnClickListener(v -> {
+                DanmakuConfig latest = DanmakuConfigManager.getConfig(activity);
+                DanmakuApiSource latestSource = latest.findApiSource(sourceUrl);
+                if (latestSource != null) {
+                    latestSource.enabled = !latestSource.enabled;
+                    DanmakuConfigManager.saveConfig(activity, latest);
+                    refresh.run();
+                }
+            });
+
+            testBtn.setOnClickListener(v -> testApiSource(activity, sourceUrl, testBtn, refresh));
+            aliasBtn.setOnClickListener(v -> showApiSourceAliasDialog(activity, sourceUrl, refresh));
+            upBtn.setEnabled(i > 0);
+            upBtn.setOnClickListener(v -> {
+                DanmakuConfig latest = DanmakuConfigManager.getConfig(activity);
+                latest.moveApiSource(sourceUrl, -1);
+                DanmakuConfigManager.saveConfig(activity, latest);
+                refresh.run();
+            });
+
+            downBtn.setEnabled(i < sources.size() - 1);
+            downBtn.setOnClickListener(v -> {
+                DanmakuConfig latest = DanmakuConfigManager.getConfig(activity);
+                latest.moveApiSource(sourceUrl, 1);
+                DanmakuConfigManager.saveConfig(activity, latest);
+                refresh.run();
+            });
+
+            deleteBtn.setOnClickListener(v -> {
+                DanmakuConfig latest = DanmakuConfigManager.getConfig(activity);
+                latest.removeApiSource(sourceUrl);
+                DanmakuConfigManager.saveConfig(activity, latest);
+                Utils.safeShowToast(activity, "API源已删除");
+                refresh.run();
+            });
+        }
+    }
+
+    private static void showApiSourceAliasDialog(Activity activity, String sourceUrl, Runnable refresh) {
+        DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
+        DanmakuApiSource source = config.findApiSource(sourceUrl);
+        if (source == null) {
+            Utils.safeShowToast(activity, "API源不存在");
+            return;
+        }
+
+        LinearLayout layout = new LinearLayout(activity);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(dpToPx(activity, 20), dpToPx(activity, 16), dpToPx(activity, 20), dpToPx(activity, 8));
+
+        TextView urlView = new TextView(activity);
+        urlView.setText(source.url);
+        urlView.setTextSize(12);
+        urlView.setTextColor(TEXT_SECONDARY);
+        urlView.setPadding(0, 0, 0, dpToPx(activity, 10));
+        layout.addView(urlView);
+
+        EditText aliasInput = new EditText(activity);
+        aliasInput.setHint("别名，例如 公益源");
+        aliasInput.setSingleLine(true);
+        aliasInput.setText(DanmakuApiSource.normalizeName(source.name));
+        aliasInput.setTextSize(14);
+        aliasInput.setTextColor(TEXT_PRIMARY);
+        aliasInput.setHintTextColor(TEXT_TERTIARY);
+        aliasInput.setPadding(dpToPx(activity, 12), dpToPx(activity, 10), dpToPx(activity, 12), dpToPx(activity, 10));
+        applyTVInputFocusEffect(aliasInput, false);
+        layout.addView(aliasInput, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        AlertDialog dialog = new AlertDialog.Builder(activity)
+                .setTitle("设置API源别名")
+                .setView(layout)
+                .setPositiveButton("保存", null)
+                .setNegativeButton("取消", null)
+                .setNeutralButton("清空", null)
+                .create();
+
+        dialog.setOnShowListener(d -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                DanmakuConfig latest = DanmakuConfigManager.getConfig(activity);
+                latest.setApiSourceName(sourceUrl, aliasInput.getText().toString());
+                DanmakuConfigManager.saveConfig(activity, latest);
+                Utils.safeShowToast(activity, "别名已保存");
+                refresh.run();
+                dialog.dismiss();
+            });
+
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+                DanmakuConfig latest = DanmakuConfigManager.getConfig(activity);
+                latest.setApiSourceName(sourceUrl, "");
+                DanmakuConfigManager.saveConfig(activity, latest);
+                Utils.safeShowToast(activity, "别名已清空");
+                refresh.run();
+                dialog.dismiss();
+            });
+        });
+
+        safeShowDialog(activity, dialog);
+    }
+
+    private static LinearLayout.LayoutParams createSourceButtonParams(Activity activity) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dpToPx(activity, 38), 1);
+        params.setMargins(dpToPx(activity, 3), 0, dpToPx(activity, 3), 0);
+        return params;
+    }
+
+    private static void testApiSource(Activity activity, String sourceUrl, Button button, Runnable refresh) {
+        button.setEnabled(false);
+        button.setText("测试中");
+        new Thread(() -> {
+            LeoDanmakuService.ApiSourceTestResult result = LeoDanmakuService.testApiSource(sourceUrl);
+            DanmakuConfigManager.recordApiSourceResult(activity.getApplicationContext(), sourceUrl,
+                    result.success, result.latencyMs, result.message);
+            DanmakuSpider.log("API源测试 " + (result.success ? "成功" : "失败") + ": " + sourceUrl + " - " + result.message);
+
+            activity.runOnUiThread(() -> {
+                if (!activity.isFinishing() && !activity.isDestroyed()) {
+                    Utils.safeShowToast(activity, result.success ? "测试成功: " + result.latencyMs + "ms" : "测试失败: " + result.message);
+                    refresh.run();
+                }
+            });
+        }).start();
+    }
+
+    private static void testAllApiSources(Activity activity, Button button, Runnable refresh) {
+        DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
+        List<DanmakuApiSource> sources = new ArrayList<>(config.getApiSources());
+        if (sources.isEmpty()) {
+            Utils.safeShowToast(activity, "暂无API源");
+            return;
+        }
+
+        button.setEnabled(false);
+        button.setText("测试中");
+        new Thread(() -> {
+            int successCount = 0;
+            for (DanmakuApiSource source : sources) {
+                LeoDanmakuService.ApiSourceTestResult result = LeoDanmakuService.testApiSource(source.url);
+                if (result.success) successCount++;
+                DanmakuConfigManager.recordApiSourceResult(activity.getApplicationContext(), source.url,
+                        result.success, result.latencyMs, result.message);
+            }
+            final int finalSuccessCount = successCount;
+            activity.runOnUiThread(() -> {
+                if (!activity.isFinishing() && !activity.isDestroyed()) {
+                    button.setEnabled(true);
+                    button.setText("全部测试");
+                    Utils.safeShowToast(activity, "测试完成: " + finalSuccessCount + "/" + sources.size() + " 可用");
+                    refresh.run();
+                }
+            });
+        }).start();
+    }
+
+    private static String buildApiSourceSummary(DanmakuConfig config) {
+        if (config == null) return "未配置API源";
+        List<DanmakuApiSource> sources = config.getApiSources();
+        List<DanmakuApiSource> enabledSources = config.getEnabledApiSources();
+        if (sources.isEmpty()) return "未配置API源";
+        if (enabledSources.isEmpty()) return "已配置 " + sources.size() + " 个API源，当前全部停用";
+        DanmakuApiSource first = enabledSources.get(0);
+        String firstName = first.getDisplayName(shortenUrl(first.url));
+        return "已启用 " + enabledSources.size() + "/" + sources.size() + "，首选：" + firstName;
+    }
+
+    private static String formatApiSourceStatus(DanmakuApiSource source) {
+        String state = source.enabled ? "启用" : "停用";
+        String latency = source.lastLatencyMs >= 0 ? source.lastLatencyMs + "ms" : "未测试";
+        String successTime = source.lastSuccessTimeMs > 0 ? formatTime(source.lastSuccessTimeMs) : "未成功";
+        String error = TextUtils.isEmpty(source.lastError) ? "" : " | " + source.lastError;
+        return state + " | 延迟 " + latency + " | 最近成功 " + successTime + error;
+    }
+
+    private static String formatTime(long timeMs) {
+        if (timeMs <= 0) return "未记录";
+        return new SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(new Date(timeMs));
+    }
+
+    private static String shortenUrl(String url) {
+        if (TextUtils.isEmpty(url) || url.length() <= 42) return url;
+        return url.substring(0, 39) + "...";
     }
 
     public static void showLpConfigDialog(Context ctx) {
@@ -1254,9 +1662,10 @@ public class DanmakuUIHelper {
 
                     LinearLayout tabContainer = new LinearLayout(activity);
                     tabContainer.setOrientation(LinearLayout.HORIZONTAL);
-                    tabContainer.setPadding(0, dpToPx(activity, 4), 0, dpToPx(activity, 8));
+                    tabContainer.setGravity(Gravity.CENTER_VERTICAL);
+                    tabContainer.setPadding(0, dpToPx(activity, 4), 0, dpToPx(activity, 4));
                     tabContainer.setBackgroundColor(isTemplate3 ? DARK_BG_TERTIARY : BACKGROUND_LIGHT);
-                    LinearLayout.LayoutParams tabContainerParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(activity, 48));
+                    LinearLayout.LayoutParams tabContainerParams = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(activity, 62));
                     tabContainerParams.setMargins(0, dpToPx(activity, 2), 0, dpToPx(activity, 8));
                     tabContainer.setLayoutParams(tabContainerParams);
                     mainLayout.addView(tabContainer);
@@ -1304,6 +1713,7 @@ public class DanmakuUIHelper {
                                 Utils.safeShowToast(activity, "请输入关键词");
                                 return;
                             }
+                            currentSearchKeyword = keyword;
 
                             String cacheKey = episodeInfo != null && episodeInfo.getEpisodeNames() != null && !episodeInfo.getEpisodeNames().isEmpty() 
                                     ? episodeInfo.getEpisodeNames().get(0) : "";
@@ -1357,111 +1767,21 @@ public class DanmakuUIHelper {
                                                 return;
                                             }
 
-                                            java.util.Map<String, List<DanmakuItem>> groupedResults = new java.util.HashMap<>();
+                                            java.util.Map<String, List<DanmakuItem>> groupedResults = new java.util.LinkedHashMap<>();
                                             for (DanmakuItem item : results) {
-                                                String from = item.from != null ? item.from : "默认";
-                                                if (!groupedResults.containsKey(from)) {
-                                                    groupedResults.put(from, new java.util.ArrayList<>());
+                                                String groupName = buildSearchResultGroupName(activity, item);
+                                                if (!groupedResults.containsKey(groupName)) {
+                                                    groupedResults.put(groupName, new java.util.ArrayList<>());
                                                 }
-                                                groupedResults.get(from).add(item);
+                                                groupedResults.get(groupName).add(item);
                                             }
 
                                             java.util.List<String> tabs = new java.util.ArrayList<>(groupedResults.keySet());
                                             java.util.Collections.sort(tabs);
 
-                                            for (int i = 0; i < tabs.size(); i++) {
-                                                String tabName = tabs.get(i);
-                                                Button tabBtn = isTemplate3 ?
-                                                        createDarkSolidButton(activity, tabName, DARK_PRIMARY_COLOR) :
-                                                        createStyledButton(activity, tabName, PRIMARY_COLOR);
-                                                tabBtn.setTag(tabName);
-                                                tabBtn.setPadding(15, 10, 15, 10);
-
-                                                LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
-                                                tabParams.setMargins(5, 0, 5, 0);
-                                                tabBtn.setLayoutParams(tabParams);
-
-                                                final int tabIndex = i;
-                                                tabBtn.setOnClickListener(new View.OnClickListener() {
-                                                    @Override
-                                                    public void onClick(View v1) {
-                                                        for (int j = 0; j < tabContainer.getChildCount(); j++) {
-                                                            Button btn = (Button) tabContainer.getChildAt(j);
-                                                            if (j == tabIndex) {
-                                                                if (isTemplate3) {
-                                                                    btn.setBackground(createRoundedTransparentDrawable(DARK_PRIMARY_COLOR));
-                                                                    btn.setTextColor(DARK_TEXT_PRIMARY);
-                                                                } else {
-                                                                    btn.setBackground(createRoundedBackgroundDrawable(PRIMARY_COLOR));
-                                                                    btn.setTextColor(Color.WHITE);
-                                                                }
-                                                            } else {
-                                                                if (isTemplate3) {
-                                                                    btn.setBackground(createRoundedTransparentDrawable(DARK_INACTIVE));
-                                                                    btn.setTextColor(DARK_TEXT_PRIMARY);
-                                                                } else {
-                                                                    btn.setBackground(createRoundedBackgroundDrawable(GRAY_INACTIVE));
-                                                                    btn.setTextColor(Color.WHITE);
-                                                                }
-                                                            }
-                                                        }
-                                                        showResultsForTab(resultContainer, groupedResults.get(tabName), activity, dialog);
-                                                    }
-                                                });
-
-                                                tabContainer.addView(tabBtn);
-
-                                                List<DanmakuItem> tabItems = groupedResults.get(tabName);
-                                                boolean containsLastUrl = false;
-                                                if (DanmakuManager.lastDanmakuUrl != null && !DanmakuManager.lastDanmakuUrl.isEmpty()) {
-                                                    for (DanmakuItem item : tabItems) {
-                                                        if (item.getDanmakuUrl() != null && item.getDanmakuUrl().equals(DanmakuManager.lastDanmakuUrl)) {
-                                                            containsLastUrl = true;
-                                                            break;
-                                                        }
-                                                    }
-                                                }
-
-                                                if (DanmakuManager.lastDanmakuUrl == null || DanmakuManager.lastDanmakuUrl.isEmpty()) {
-                                                    if (i == 0) {
-                                                        if (isTemplate3) {
-                                                            tabBtn.setBackground(createRoundedTransparentDrawable(DARK_PRIMARY_COLOR));
-                                                            tabBtn.setTextColor(DARK_TEXT_PRIMARY);
-                                                        } else {
-                                                            tabBtn.setBackground(createRoundedBackgroundDrawable(PRIMARY_COLOR));
-                                                            tabBtn.setTextColor(Color.WHITE);
-                                                        }
-                                                        showResultsForTab(resultContainer, groupedResults.get(tabName), activity, dialog);
-                                                    } else {
-                                                        if (isTemplate3) {
-                                                            tabBtn.setBackground(createRoundedTransparentDrawable(DARK_INACTIVE));
-                                                            tabBtn.setTextColor(DARK_TEXT_PRIMARY);
-                                                        } else {
-                                                            tabBtn.setBackground(createRoundedBackgroundDrawable(GRAY_INACTIVE));
-                                                            tabBtn.setTextColor(Color.WHITE);
-                                                        }
-                                                    }
-                                                } else {
-                                                    if (containsLastUrl) {
-                                                        if (isTemplate3) {
-                                                            tabBtn.setBackground(createRoundedTransparentDrawable(DARK_PRIMARY_COLOR));
-                                                            tabBtn.setTextColor(DARK_TEXT_PRIMARY);
-                                                        } else {
-                                                            tabBtn.setBackground(createRoundedBackgroundDrawable(PRIMARY_COLOR));
-                                                            tabBtn.setTextColor(Color.WHITE);
-                                                        }
-                                                        showResultsForTab(resultContainer, groupedResults.get(tabName), activity, dialog);
-                                                    } else {
-                                                        if (isTemplate3) {
-                                                            tabBtn.setBackground(createRoundedTransparentDrawable(DARK_INACTIVE));
-                                                            tabBtn.setTextColor(DARK_TEXT_PRIMARY);
-                                                        } else {
-                                                            tabBtn.setBackground(createRoundedBackgroundDrawable(GRAY_INACTIVE));
-                                                            tabBtn.setTextColor(Color.WHITE);
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                            int selectedTabIndex = findInitialSearchTabIndex(tabs, groupedResults);
+                                            renderSearchSourcePager(tabContainer, resultContainer, groupedResults, tabs,
+                                                    selectedTabIndex, activity, dialog, isTemplate3);
                                         }
                                     });
                                 }
@@ -1495,6 +1815,185 @@ public class DanmakuUIHelper {
     private static int dpToPx(Context context, int dp) {
         float density = context.getResources().getDisplayMetrics().density;
         return Math.round(dp * density);
+    }
+
+    private static int findInitialSearchTabIndex(List<String> tabs, java.util.Map<String, List<DanmakuItem>> groupedResults) {
+        if (tabs == null || tabs.isEmpty()) return 0;
+        if (TextUtils.isEmpty(DanmakuManager.lastDanmakuUrl)) return 0;
+
+        for (int i = 0; i < tabs.size(); i++) {
+            List<DanmakuItem> items = groupedResults.get(tabs.get(i));
+            if (items == null) continue;
+            for (DanmakuItem item : items) {
+                if (item != null && DanmakuManager.lastDanmakuUrl.equals(item.getDanmakuUrl())) {
+                    return i;
+                }
+            }
+        }
+        return 0;
+    }
+
+    private static void renderSearchSourcePager(LinearLayout tabContainer,
+                                                LinearLayout resultContainer,
+                                                java.util.Map<String, List<DanmakuItem>> groupedResults,
+                                                List<String> tabs,
+                                                int selectedIndex,
+                                                Activity activity,
+                                                AlertDialog dialog,
+                                                boolean isTemplate3) {
+        tabContainer.removeAllViews();
+        if (tabs == null || tabs.isEmpty()) {
+            resultContainer.removeAllViews();
+            return;
+        }
+
+        final int selected = Math.max(0, Math.min(selectedIndex, tabs.size() - 1));
+        final String tabName = tabs.get(selected);
+        List<DanmakuItem> selectedItems = groupedResults.get(tabName);
+        int itemCount = selectedItems != null ? selectedItems.size() : 0;
+        boolean canCycle = tabs.size() > 1;
+
+        final Runnable prevAction = new Runnable() {
+            @Override
+            public void run() {
+                if (!canCycle) return;
+                int target = selected > 0 ? selected - 1 : tabs.size() - 1;
+                renderSearchSourcePager(tabContainer, resultContainer, groupedResults, tabs,
+                        target, activity, dialog, isTemplate3);
+            }
+        };
+
+        final Runnable nextAction = new Runnable() {
+            @Override
+            public void run() {
+                if (!canCycle) return;
+                int target = selected < tabs.size() - 1 ? selected + 1 : 0;
+                renderSearchSourcePager(tabContainer, resultContainer, groupedResults, tabs,
+                        target, activity, dialog, isTemplate3);
+            }
+        };
+
+        Button prevBtn = createSearchPagerArrowButton(activity, "<", isTemplate3, canCycle);
+        Button centerBtn = createSearchPagerCenterButton(activity, tabName,
+                "线路 " + (selected + 1) + "/" + tabs.size() + " · " + itemCount + "集",
+                isTemplate3);
+        Button nextBtn = createSearchPagerArrowButton(activity, ">", isTemplate3, canCycle);
+
+        prevBtn.setOnClickListener(v -> prevAction.run());
+        nextBtn.setOnClickListener(v -> nextAction.run());
+        attachSearchPagerNavigation(centerBtn, prevAction, nextAction, canCycle);
+
+        LinearLayout.LayoutParams arrowParams = new LinearLayout.LayoutParams(dpToPx(activity, 54), ViewGroup.LayoutParams.MATCH_PARENT);
+        arrowParams.setMargins(dpToPx(activity, 4), 0, dpToPx(activity, 4), 0);
+        LinearLayout.LayoutParams centerParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
+        centerParams.setMargins(dpToPx(activity, 4), 0, dpToPx(activity, 4), 0);
+
+        tabContainer.addView(prevBtn, arrowParams);
+        tabContainer.addView(centerBtn, centerParams);
+        tabContainer.addView(nextBtn, arrowParams);
+
+        showResultsForTab(resultContainer, selectedItems, activity, dialog);
+    }
+
+    private static Button createSearchPagerArrowButton(Activity activity, String text, boolean isTemplate3, boolean enabled) {
+        Button button = new Button(activity);
+        button.setText(text);
+        button.setTextSize(22);
+        button.setTypeface(null, android.graphics.Typeface.BOLD);
+        button.setGravity(Gravity.CENTER);
+        button.setAllCaps(false);
+        button.setEnabled(enabled);
+        button.setFocusable(enabled);
+        button.setFocusableInTouchMode(enabled);
+        button.setPadding(0, 0, 0, 0);
+
+        int activeColor = isTemplate3 ? DARK_PRIMARY_COLOR : PRIMARY_COLOR;
+        int inactiveColor = isTemplate3 ? DARK_INACTIVE : GRAY_INACTIVE;
+        button.setTextColor(isTemplate3 ? DARK_TEXT_PRIMARY : Color.WHITE);
+        button.setBackground(isTemplate3 ?
+                createRoundedTransparentDrawable(enabled ? activeColor : inactiveColor) :
+                createRoundedBackgroundDrawable(enabled ? activeColor : inactiveColor));
+        button.setAlpha(enabled ? 1.0f : 0.55f);
+
+        button.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!button.isEnabled()) return;
+            int color = hasFocus ? (isTemplate3 ? DARK_SECONDARY_COLOR : PRIMARY_DARK) : activeColor;
+            v.setBackground(isTemplate3 ? createRoundedTransparentDrawable(color) : createRoundedBackgroundDrawable(color));
+            v.setScaleX(hasFocus ? 1.04f : 1.0f);
+            v.setScaleY(hasFocus ? 1.04f : 1.0f);
+        });
+
+        return button;
+    }
+
+    private static Button createSearchPagerCenterButton(Activity activity, String title, String summary, boolean isTemplate3) {
+        Button button = new Button(activity);
+        button.setText(title + "\n" + summary);
+        button.setTextSize(14);
+        button.setTypeface(null, android.graphics.Typeface.BOLD);
+        button.setGravity(Gravity.CENTER);
+        button.setSingleLine(false);
+        button.setMaxLines(2);
+        button.setEllipsize(TextUtils.TruncateAt.END);
+        button.setAllCaps(false);
+        button.setFocusable(true);
+        button.setFocusableInTouchMode(true);
+        button.setPadding(dpToPx(activity, 12), dpToPx(activity, 4), dpToPx(activity, 12), dpToPx(activity, 4));
+        button.setTextColor(isTemplate3 ? DARK_TEXT_PRIMARY : Color.WHITE);
+        button.setBackground(isTemplate3 ?
+                createRoundedTransparentDrawable(DARK_PRIMARY_COLOR) :
+                createRoundedBackgroundDrawable(PRIMARY_COLOR));
+
+        button.setOnFocusChangeListener((v, hasFocus) -> {
+            int color = hasFocus ? (isTemplate3 ? DARK_SECONDARY_COLOR : PRIMARY_DARK) :
+                    (isTemplate3 ? DARK_PRIMARY_COLOR : PRIMARY_COLOR);
+            v.setBackground(isTemplate3 ? createRoundedTransparentDrawable(color) : createRoundedBackgroundDrawable(color));
+        });
+
+        return button;
+    }
+
+    private static void attachSearchPagerNavigation(Button centerButton,
+                                                    Runnable prevAction,
+                                                    Runnable nextAction,
+                                                    boolean canCycle) {
+        centerButton.setOnClickListener(v -> {
+            if (canCycle) nextAction.run();
+        });
+
+        centerButton.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_UP) return false;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && canCycle) {
+                prevAction.run();
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && canCycle) {
+                nextAction.run();
+                return true;
+            }
+            return false;
+        });
+
+        final float[] downX = new float[1];
+        centerButton.setOnTouchListener((v, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                downX[0] = event.getX();
+                return true;
+            }
+            if (event.getAction() == MotionEvent.ACTION_UP) {
+                float deltaX = event.getX() - downX[0];
+                int threshold = dpToPx(v.getContext(), 48);
+                if (deltaX > threshold && canCycle) {
+                    prevAction.run();
+                } else if (deltaX < -threshold && canCycle) {
+                    nextAction.run();
+                } else {
+                    v.performClick();
+                }
+                return true;
+            }
+            return true;
+        });
     }
 
 
@@ -1541,7 +2040,7 @@ public class DanmakuUIHelper {
         // 用于跟踪当前选中的分组按钮
         final java.util.Map<String, Button> groupButtons = new java.util.HashMap<>();
         java.util.List<String> animeTitles = new java.util.ArrayList<>(animeGroups.keySet());
-        java.util.Collections.sort(animeTitles);
+        sortAnimeTitlesByKeyword(animeTitles);
 
         DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
         boolean isTemplate3 = config.getDanmakuStyle().equals("模板三");
@@ -1974,7 +2473,148 @@ public class DanmakuUIHelper {
         });
     }
 
+    private static void sortAnimeTitlesByKeyword(List<String> titles) {
+        final String keyword = normalizeSearchText(currentSearchKeyword);
+        if (TextUtils.isEmpty(keyword)) {
+            java.util.Collections.sort(titles);
+            return;
+        }
+        java.util.Collections.sort(titles, new java.util.Comparator<String>() {
+            @Override
+            public int compare(String left, String right) {
+                double leftScore = calculateTitleMatchScore(left, keyword);
+                double rightScore = calculateTitleMatchScore(right, keyword);
+                int scoreCompare = Double.compare(rightScore, leftScore);
+                if (scoreCompare != 0) return scoreCompare;
 
+                int lengthCompare = Integer.compare(safeLength(left), safeLength(right));
+                if (lengthCompare != 0) return lengthCompare;
+
+                String leftText = left != null ? left : "";
+                String rightText = right != null ? right : "";
+                return leftText.compareTo(rightText);
+            }
+        });
+    }
+
+    private static double calculateTitleMatchScore(String title, String normalizedKeyword) {
+        String normalizedTitle = normalizeSearchText(title);
+        if (TextUtils.isEmpty(normalizedTitle) || TextUtils.isEmpty(normalizedKeyword)) return 0.0;
+        if (normalizedTitle.equals(normalizedKeyword)) return 3.0;
+        if (normalizedTitle.contains(normalizedKeyword)) return 2.0 + normalizedKeyword.length() / (double) normalizedTitle.length();
+        if (normalizedKeyword.contains(normalizedTitle)) return 1.8 + normalizedTitle.length() / (double) normalizedKeyword.length();
+        return calculateSimilarity(normalizedTitle, normalizedKeyword);
+    }
+
+    private static String normalizeSearchText(String text) {
+        if (TextUtils.isEmpty(text)) return "";
+        return text.replaceAll("(?i)\\s*from\\s*.*$", "")
+                .replaceAll("[\\[【].*?[\\]】]", "")
+                .replaceAll("\\(\\d{4}\\)", "")
+                .replaceAll("\\s+", "")
+                .trim()
+                .toLowerCase();
+    }
+
+    private static double calculateSimilarity(String left, String right) {
+        if (left == null) left = "";
+        if (right == null) right = "";
+        String longer = left;
+        String shorter = right;
+        if (left.length() < right.length()) {
+            longer = right;
+            shorter = left;
+        }
+        int longerLength = longer.length();
+        if (longerLength == 0) return 1.0;
+        return (longerLength - editDistance(longer, shorter)) / (double) longerLength;
+    }
+
+    private static int editDistance(String left, String right) {
+        left = left.toLowerCase();
+        right = right.toLowerCase();
+        int[] costs = new int[right.length() + 1];
+        for (int i = 0; i <= left.length(); i++) {
+            int lastValue = i;
+            for (int j = 0; j <= right.length(); j++) {
+                if (i == 0) {
+                    costs[j] = j;
+                } else if (j > 0) {
+                    int newValue = costs[j - 1];
+                    if (left.charAt(i - 1) != right.charAt(j - 1)) {
+                        newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+                    }
+                    costs[j - 1] = lastValue;
+                    lastValue = newValue;
+                }
+            }
+            if (i > 0) costs[right.length()] = lastValue;
+        }
+        return costs[right.length()];
+    }
+
+    private static int safeLength(String text) {
+        return text != null ? text.length() : 0;
+    }
+
+
+
+    private static String buildSearchResultGroupName(Context context, DanmakuItem item) {
+        String from = item != null && !TextUtils.isEmpty(item.from) ? item.from.trim() : "默认";
+        if (!shouldShowApiSourceLabel(context)) return from;
+        return buildApiSourceLabel(context, item) + " · " + from;
+    }
+
+    private static String buildResultTitleWithSource(Context context, DanmakuItem item) {
+        return item != null ? item.getTitleWithEp() : "";
+    }
+
+    private static boolean shouldShowApiSourceLabel(Context context) {
+        try {
+            DanmakuConfig config = DanmakuConfigManager.getConfig(context);
+            return config != null && config.getEnabledApiSources().size() > 1;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static String buildApiSourceLabel(Context context, DanmakuItem item) {
+        if (item != null && !TextUtils.isEmpty(item.apiSourceName)) {
+            return item.apiSourceName.trim();
+        }
+        return buildApiSourceLabel(context, item != null ? item.apiBase : null);
+    }
+
+    private static String buildApiSourceLabel(Context context, String apiBase) {
+        String normalized = DanmakuApiSource.normalizeUrl(apiBase);
+        if (TextUtils.isEmpty(normalized)) return "未知源";
+
+        try {
+            DanmakuConfig config = DanmakuConfigManager.getConfig(context);
+            if (config != null) {
+                List<DanmakuApiSource> sources = config.getApiSources();
+                for (int i = 0; i < sources.size(); i++) {
+                    DanmakuApiSource source = sources.get(i);
+                    if (source != null && normalized.equals(DanmakuApiSource.normalizeUrl(source.url))) {
+                        return source.getDisplayName("源" + (i + 1));
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        return buildShortApiSourceLabel(normalized);
+    }
+
+    private static String buildShortApiSourceLabel(String url) {
+        if (TextUtils.isEmpty(url)) return "未知源";
+        String label = url;
+        int schemeIndex = label.indexOf("://");
+        if (schemeIndex >= 0) label = label.substring(schemeIndex + 3);
+        int slashIndex = label.indexOf('/');
+        if (slashIndex > 0) label = label.substring(0, slashIndex);
+        return TextUtils.isEmpty(label) ? "未知源" : label;
+    }
 
     // 创建结果按钮的辅助方法 - 改进版本
     private static Button createResultButton(Activity activity, DanmakuItem item, AlertDialog dialog, boolean isTemplate3) {
@@ -1982,7 +2622,7 @@ public class DanmakuUIHelper {
         resultItem.setFocusable(true);
         resultItem.setFocusableInTouchMode(true);
         resultItem.setClickable(true);
-        resultItem.setText(item.getTitleWithEp());
+        resultItem.setText(buildResultTitleWithSource(activity, item));
         resultItem.setTextSize(13);
         resultItem.setPadding(dpToPx(activity, 14), dpToPx(activity, 10), dpToPx(activity, 14), dpToPx(activity, 10));
 
@@ -2087,7 +2727,7 @@ public class DanmakuUIHelper {
         // 安全设置工具提示（完整标题）- 仅在 API 26+ 可用
         // 当按钮获得焦点或长按时，会显示完整的标题
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            resultItem.setTooltipText(item.getTitleWithEp());
+            resultItem.setTooltipText(buildResultTitleWithSource(activity, item));
         }
 
         // 设置圆角背景 - 第三层级：绿色
@@ -2169,7 +2809,7 @@ public class DanmakuUIHelper {
             @Override
             public boolean onLongClick(View v) {
                 DanmakuItem item = (DanmakuItem) v.getTag();
-                Utils.safeShowToast(activity, item.getTitleWithEp(),  true);
+                Utils.safeShowToast(activity, buildResultTitleWithSource(activity, item),  true);
                 return true;
             }
         });
@@ -2267,7 +2907,7 @@ public class DanmakuUIHelper {
         // 安全设置工具提示（完整标题）- 仅在 API 26+ 可用
         // 添加版本检查避免在低版本上崩溃
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-            resultItem.setTooltipText(item.getTitleWithEp());
+            resultItem.setTooltipText(buildResultTitleWithSource(activity, item));
         }
 
         // 设置圆角背景 - 第三层级：绿色
@@ -2349,7 +2989,7 @@ public class DanmakuUIHelper {
             @Override
             public boolean onLongClick(View v) {
                 DanmakuItem item = (DanmakuItem) v.getTag();
-                Utils.safeShowToast(activity, item.getTitleWithEp(),  true);
+                Utils.safeShowToast(activity, buildResultTitleWithSource(activity, item),  true);
                 return true;
             }
         });

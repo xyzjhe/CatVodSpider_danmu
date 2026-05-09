@@ -37,6 +37,16 @@ public class WebServer extends NanoHTTPD {
             return serveDanmaku(session);
         } else if (uri.equals("/select")) {
             Map<String, String> params = session.getParms();
+            String danmakuUrl = params.get("url");
+            if (!TextUtils.isEmpty(danmakuUrl)) {
+                DanmakuItem item = DanmakuManager.lastDanmakuUrlItemMap.get(danmakuUrl);
+                if (item != null) {
+                    Activity activity = Utils.getTopActivity();
+                    LeoDanmakuService.pushDanmakuDirect(item, activity, false);
+                    return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "OK");
+                }
+            }
+
             String epIdStr = params.get("epId");
             if (epIdStr != null) {
                 try {
@@ -131,6 +141,20 @@ public class WebServer extends NanoHTTPD {
                 "let isReversed = false;" +
                 "let groupedResults = {};" +
                 "let currentTab = '';" +
+                "let sourceLabels = {};" +
+                "let sourceLabelSeed = 0;" +
+                "" +
+                "function getSourceLabel(item) {" +
+                "  if (item.apiSourceName) return item.apiSourceName;" +
+                "  const base = item.apiBase || '';" +
+                "  if (!base) return '未知源';" +
+                "  if (!sourceLabels[base]) sourceLabels[base] = '源' + (++sourceLabelSeed) + shortSourceHost(base);" +
+                "  return sourceLabels[base];" +
+                "}" +
+                "" +
+                "function shortSourceHost(base) {" +
+                "  try { const host = new URL(base).host; return host ? '(' + host + ')' : ''; } catch (e) { return ''; }" +
+                "}" +
                 "" +
                 "function toggleOrder() {" +
                 "  isReversed = !isReversed;" +
@@ -151,10 +175,13 @@ public class WebServer extends NanoHTTPD {
                 "    .then(response => response.json())" +
                 "    .then(data => {" +
                 "      groupedResults = {};" +
+                "      sourceLabels = {};" +
+                "      sourceLabelSeed = 0;" +
                 "      data.forEach(item => {" +
                 "        const from = item.from || '默认';" +
-                "        if (!groupedResults[from]) groupedResults[from] = [];" +
-                "        groupedResults[from].push(item);" +
+                "        const group = getSourceLabel(item) + ' · ' + from;" +
+                "        if (!groupedResults[group]) groupedResults[group] = [];" +
+                "        groupedResults[group].push(item);" +
                 "      });" +
                 "      renderTabs();" +
                 "    })" +
@@ -215,15 +242,17 @@ public class WebServer extends NanoHTTPD {
                 "      const div = document.createElement('div');" +
                 "      div.className = 'result-item';" +
                 "      div.innerHTML = `<div>${item.title}</div><div class='result-info'>${item.epTitle || ''}</div>`;" +
-                "      div.onclick = (e) => { e.stopPropagation(); select(item.epId); };" +
+                "      div.onclick = (e) => { e.stopPropagation(); select(item); };" +
                 "      groupDiv.appendChild(div);" +
                 "    });" +
                 "    resultsDiv.appendChild(groupDiv);" +
                 "  });" +
                 "}" +
                 "" +
-                "function select(epId) {" +
-                "  fetch('/select?epId=' + epId)" +
+                "function select(item) {" +
+                "  const url = item.apiBase && item.epId ? item.apiBase + '/api/v2/comment/' + item.epId + '?format=xml' : '';" +
+                "  const query = url ? 'url=' + encodeURIComponent(url) : 'epId=' + item.epId;" +
+                "  fetch('/select?' + query)" +
                 "    .then(response => {" +
                 "      if (response.ok) { alert('弹幕推送成功!'); } " +
                 "      else { response.text().then(text => alert('弹幕推送失败: ' + text)); }" +
