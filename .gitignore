@@ -2,4 +2,5 @@
 .idea
 *build
 .proxyai
+.vscode
 /local.properties
