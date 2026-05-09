@@ -12,12 +12,13 @@ import com.github.catvod.bean.jianpian.Search;
 import com.github.catvod.crawler.Spider;
 import com.github.catvod.net.OkHttp;
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import java.net.URLEncoder;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,10 +48,10 @@ public class Jianpian extends Spider {
         String[] domain = parts.split(",");
         for (String d : domain) {
             siteUrl = "https://wangerniu." + d;
-            String json = OkHttp.string(siteUrl + "/api/appAuthConfig");
+            String json = OkHttp.string(siteUrl + "/api/v2/settings/resourceDomainConfig");
             if (!json.isEmpty()) {
                 JsonObject root = new Gson().fromJson(json, JsonObject.class);
-                imgDomain = root.getAsJsonObject("data").get("imgDomain").getAsString();
+                imgDomain = root.getAsJsonObject("data").get("imgDomain").getAsString().split(",")[0];
                 break;
             }
         }
@@ -59,9 +60,12 @@ public class Jianpian extends Spider {
     @Override
     public String homeContent(boolean filter) {
         List<Class> classes = new ArrayList<>();
-        List<String> typeIds = Arrays.asList("1", "2", "3", "4", "50", "99");
-        List<String> typeNames = Arrays.asList("電影", "電視劇", "動漫", "綜藝", "紀錄片", "Netflix");
-        for (int i = 0; i < typeIds.size(); i++) classes.add(new Class(typeIds.get(i), typeNames.get(i)));
+        JsonObject homeCategory = new Gson().fromJson(OkHttp.string(siteUrl + "/api/v2/settings/homeCategory"), JsonObject.class);
+        JsonArray dataArray = homeCategory.getAsJsonArray("data");
+        for (JsonElement element : dataArray) {
+            if (element.getAsJsonObject().get("name").getAsString().equals("推荐")) continue;
+            classes.add(new Class(element.getAsJsonObject().get("id").getAsString(), element.getAsJsonObject().get("name").getAsString()));
+        }
         return Result.string(classes, JsonParser.parseString(OkHttp.string(extend)));
     }
 
