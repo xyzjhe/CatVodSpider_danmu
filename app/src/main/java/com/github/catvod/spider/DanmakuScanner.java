@@ -245,14 +245,14 @@ public class DanmakuScanner {
         String title = media != null ? media.getTitle() : "";
         String urlFileName = extractFileNameFromUrl(media != null ? media.getUrl() : "");
 
-        String episodeNum = extractEpisodeNumQuiet(fileName);
+        String episodeNum = extractEpisodeNumForPlayback(fileName);
         if (!TextUtils.isEmpty(episodeNum)) {
             logEpisodeExtractDebug(media, fileName, urlFileName, "artist/fileName", episodeNum);
             return episodeNum;
         }
 
         if (!TextUtils.isEmpty(title) && !title.equals(fileName)) {
-            episodeNum = extractEpisodeNumQuiet(title);
+            episodeNum = extractEpisodeNumForPlayback(title);
             if (!TextUtils.isEmpty(episodeNum)) {
                 logEpisodeExtractDebug(media, fileName, urlFileName, "title", episodeNum);
                 return episodeNum;
@@ -262,7 +262,7 @@ public class DanmakuScanner {
         if (shouldUseUrlFileNameForEpisode(urlFileName)
                 && !urlFileName.equals(fileName)
                 && !urlFileName.equals(title)) {
-            episodeNum = extractEpisodeNumQuiet(urlFileName);
+            episodeNum = extractEpisodeNumForPlayback(urlFileName);
             if (!TextUtils.isEmpty(episodeNum)) {
                 logEpisodeExtractDebug(media, fileName, urlFileName, "urlFileName", episodeNum);
                 return episodeNum;
@@ -740,14 +740,18 @@ public class DanmakuScanner {
 
     // 提取集数
     public static String extractEpisodeNum(String title) {
-        return extractEpisodeNum(title, true);
+        return extractEpisodeNum(title, true, false);
     }
 
     private static String extractEpisodeNumQuiet(String title) {
-        return extractEpisodeNum(title, false);
+        return extractEpisodeNum(title, false, false);
     }
 
-    private static String extractEpisodeNum(String title, boolean logFailure) {
+    private static String extractEpisodeNumForPlayback(String title) {
+        return extractEpisodeNum(title, false, true);
+    }
+
+    private static String extractEpisodeNum(String title, boolean logFailure, boolean strictPlayback) {
         if (TextUtils.isEmpty(title)) {
             return "";
         }
@@ -826,7 +830,7 @@ public class DanmakuScanner {
             int end = matcher.end(1);
 
             // 排除明显不是集数的情况
-            if (isLikelyEpisodeNumber(processedTitle, numStr, start, end)) {
+            if (shouldAcceptLooseEpisodeNumber(processedTitle, numStr, start, end, strictPlayback)) {
                 candidates.add(new MatchCandidate(numStr, start, end,
                         calculatePriority(processedTitle, numStr, start, end)));
             } else {
@@ -836,7 +840,7 @@ public class DanmakuScanner {
 
         // 5.2 匹配文件名格式：数字.分辨率/画质
         Pattern filenamePattern = Pattern.compile(
-                "\\b([0-9]{1,3})\\.(?:[0-9]{3,4}[pP]|[0-9]{3,4}x[0-9]{3,4}|720|1080|480|HD|SD)\\b",
+                "(?<![0-9])\\b([0-9]{1,3})\\.(?:[0-9]{3,4}[pP]|[0-9]{3,4}x[0-9]{3,4}|720|1080|480|HD|SD)\\b",
                 Pattern.CASE_INSENSITIVE
         );
         matcher = filenamePattern.matcher(processedTitle);
@@ -845,7 +849,7 @@ public class DanmakuScanner {
             int start = matcher.start(1);
             int end = matcher.end(1);
 
-            if (isLikelyEpisodeNumber(processedTitle, numStr, start, end)) {
+            if (shouldAcceptLooseEpisodeNumber(processedTitle, numStr, start, end, strictPlayback)) {
                 candidates.add(new MatchCandidate(numStr, start, end,
                         calculatePriority(processedTitle, numStr, start, end) + 10)); // 额外加分
             } else {
@@ -879,7 +883,7 @@ public class DanmakuScanner {
             int end = matcher.end(1);
 
             // 严格排除文件大小、版本号等
-            if (isPureEpisodeNumber(processedTitle, numStr, start, end)) {
+            if (shouldAcceptPureEpisodeNumber(processedTitle, numStr, start, end, strictPlayback)) {
                 possibleEpisodes.add(numStr);
             }
         }
@@ -894,7 +898,7 @@ public class DanmakuScanner {
             int start = matcher.start(1);
             int end = matcher.end(1);
 
-            if (isPureEpisodeNumber(processedTitle, numStr, start, end)) {
+            if (shouldAcceptPureEpisodeNumber(processedTitle, numStr, start, end, strictPlayback)) {
                 if (!possibleEpisodes.contains(numStr)) {
                     possibleEpisodes.add(numStr);
                 }
@@ -911,7 +915,7 @@ public class DanmakuScanner {
             int start = matcher.start(1);
             int end = matcher.end(1);
 
-            if (isPureEpisodeNumber(processedTitle, numStr, start, end)) {
+            if (shouldAcceptPureEpisodeNumber(processedTitle, numStr, start, end, strictPlayback)) {
                 if (!possibleEpisodes.contains(numStr)) {
                     possibleEpisodes.add(numStr);
                 }
@@ -956,7 +960,11 @@ public class DanmakuScanner {
                 .replaceAll("\\b(?:2160|1080|720|480)[pP]\\b", " ")
                 .replaceAll("\\b(?:4K|2K|HD|SD|FHD|UHD)\\b", " ")
                 .replaceAll("\\b(?:x264|x265|H264|H265|AVC|HEVC)\\b", " ")
-                .replaceAll("\\b(?:AAC|AC3|DTS|FLAC)\\b", " ")
+                .replaceAll("\\b(?:AAC|AC3|EAC3|DTS|FLAC|TrueHD)\\b", " ")
+                .replaceAll("\\b(?:DDP|DTS|AC3|EAC3)[-._\\s]*[0-9](?:\\.[0-9])?\\b", " ")
+                .replaceAll("\\b(?:Atmos|DoVi|Dolby|HDR10|HDR)[-._\\s]*[0-9]*\\b", " ")
+                .replaceAll("\\b[0-9]{1,3}\\s*fps\\b", " ")
+                .replaceAll("\\b(?:WEB[-._\\s]*DL|BluRay|BDRip|HDRip|REMUX|HDTV|HQ)\\b", " ")
                 .replaceAll("高码率|高码", " ");
 
         // 移除版本信息：v2, ver2.0 等
@@ -1067,6 +1075,44 @@ public class DanmakuScanner {
 
         // 必须有明确的集数标识
         return context.matches(".*(?i)(ep|episode|[第][0-9零一二三四五六七八九十百千万]+[集话章节回]).*");
+    }
+
+    private static boolean shouldAcceptLooseEpisodeNumber(String title, String number, int start, int end, boolean strictPlayback) {
+        if (!isLikelyEpisodeNumber(title, number, start, end)) return false;
+        return !strictPlayback || isLikelyPlaybackEpisodeNumber(title, number, start, end);
+    }
+
+    private static boolean shouldAcceptPureEpisodeNumber(String title, String number, int start, int end, boolean strictPlayback) {
+        if (!isPureEpisodeNumber(title, number, start, end)) return false;
+        return !strictPlayback || isLikelyPlaybackEpisodeNumber(title, number, start, end);
+    }
+
+    private static boolean isLikelyPlaybackEpisodeNumber(String title, String number, int start, int end) {
+        int numValue;
+        try {
+            numValue = Integer.parseInt(number);
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        if (numValue <= 0 || numValue > 999) return false;
+
+        String context = getContext(title, start, end, 14).toLowerCase();
+        if (context.matches("(?i).*(ep|episode|season|第|集|话|章|回|期|part).*")) return true;
+
+        String before = start > 0 ? title.substring(0, start) : "";
+        String after = end < title.length() ? title.substring(end) : "";
+        boolean hasStrongSeparatorBefore = start == 0 || before.matches(".*[\\s._\\-\\[【(（]$");
+        boolean hasVideoTokenAfter = after.matches("(?i)^(?:[\\s._\\-\\]】)）]*)?(?:[0-9]{3,4}p|[0-9]{3,4}x[0-9]{3,4}|[1248]k|HD|SD|FHD|UHD|WEB|HDTV|BDRip|BluRay|REMUX|HDRip|m3u8|mp4|mkv|ts|flv|avi|mov|wmv|webm)\\b.*");
+        if (hasStrongSeparatorBefore && hasVideoTokenAfter) return true;
+
+        boolean startsLikeEpisode = start == 0 && after.matches("^[\\s._\\-].*");
+        if (startsLikeEpisode && !containsMediaNoise(context)) return true;
+
+        return false;
+    }
+
+    private static boolean containsMediaNoise(String text) {
+        return !TextUtils.isEmpty(text) && text.matches("(?i).*(gb|mb|kb|fps|bitrate|码率|ddp|eac3|ac3|dts|aac|flac|atmos|truehd|dolby|hdr|h\\.?26[45]|x26[45]|web[-._\\s]*dl|bluray|bdrip|remux|hq|uhd|fhd).*");
     }
 
     /**

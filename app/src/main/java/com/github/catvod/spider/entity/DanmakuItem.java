@@ -7,6 +7,9 @@ public class DanmakuItem {
     public Integer epId;
     public String apiBase;
     public String apiSourceName;
+    public String animeType;
+    public String typeDescription;
+    public int episodeCount;
 
     public String from;
 
@@ -64,6 +67,30 @@ public class DanmakuItem {
         this.apiSourceName = apiSourceName;
     }
 
+    public String getAnimeType() {
+        return animeType;
+    }
+
+    public void setAnimeType(String animeType) {
+        this.animeType = animeType;
+    }
+
+    public String getTypeDescription() {
+        return typeDescription;
+    }
+
+    public void setTypeDescription(String typeDescription) {
+        this.typeDescription = typeDescription;
+    }
+
+    public int getEpisodeCount() {
+        return episodeCount;
+    }
+
+    public void setEpisodeCount(int episodeCount) {
+        this.episodeCount = episodeCount;
+    }
+
     public String getFrom() {
         return from;
     }
@@ -98,6 +125,9 @@ public class DanmakuItem {
         sb.append(", epId=").append(epId);
         sb.append(", apiBase='").append(apiBase).append('\'');
         sb.append(", apiSourceName='").append(apiSourceName).append('\'');
+        sb.append(", animeType='").append(animeType).append('\'');
+        sb.append(", typeDescription='").append(typeDescription).append('\'');
+        sb.append(", episodeCount=").append(episodeCount);
         sb.append(", from='").append(from).append('\'');
         sb.append(", animeTitle='").append(animeTitle).append('\'');
         sb.append('}');

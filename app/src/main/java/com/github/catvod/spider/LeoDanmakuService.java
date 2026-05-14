@@ -299,7 +299,7 @@ public class LeoDanmakuService {
                     if (eps != null) {
                         for (int j = 0; j < eps.length(); j++) {
                             JSONObject ep = eps.optJSONObject(j);
-                            processEpisode(ep, animeTitle, apiBase, list);
+                            processEpisode(ep, anime, animeTitle, apiBase, eps.length(), list);
                         }
                     }
                 }
@@ -307,7 +307,7 @@ public class LeoDanmakuService {
                 // 扁平结构
                 for (int i = 0; i < array.length(); i++) {
                     JSONObject ep = array.optJSONObject(i);
-                    processEpisode(ep, null, apiBase, list);
+                    processEpisode(ep, null, null, apiBase, array.length(), list);
                 }
             }
         } catch (Exception e) {
@@ -358,13 +358,16 @@ public class LeoDanmakuService {
 
     // 处理单集数据
     private static void processEpisode(JSONObject ep, String forcedTitle, String apiBase, List<DanmakuItem> list) {
-        String animeTitle = forcedTitle;
-        if (TextUtils.isEmpty(animeTitle)) animeTitle = ep.optString("animeTitle");
-        if (TextUtils.isEmpty(animeTitle)) animeTitle = ep.optString("title");
-        if (TextUtils.isEmpty(animeTitle)) animeTitle = ep.optString("name");
+        processEpisode(ep, null, forcedTitle, apiBase, 0, list);
+    }
 
-        String epTitle = ep.optString("episodeTitle");
-        if (TextUtils.isEmpty(epTitle)) epTitle = ep.optString("epTitle");
+    private static void processEpisode(JSONObject ep, JSONObject anime, String forcedTitle, String apiBase, int episodeCount, List<DanmakuItem> list) {
+        if (ep == null) return;
+        String animeTitle = forcedTitle;
+        if (TextUtils.isEmpty(animeTitle) && anime != null) animeTitle = firstOptString(anime, "animeTitle", "title", "name");
+        if (TextUtils.isEmpty(animeTitle)) animeTitle = firstOptString(ep, "animeTitle", "title", "name");
+
+        String epTitle = firstOptString(ep, "episodeTitle", "epTitle", "name");
 
         int epId = ep.optInt("episodeId", ep.optInt("epId", ep.optInt("id")));
 
@@ -377,6 +380,11 @@ public class LeoDanmakuService {
         item.epTitle = epTitle;
         item.epId = epId;
         item.apiBase = apiBase;
+        item.animeType = firstOptString(anime, ep, "type", "animeType", "mediaType", "category");
+        item.typeDescription = firstOptString(anime, ep, "typeDescription", "typeName", "categoryName", "typename");
+        item.episodeCount = firstPositive(episodeCount,
+                optInt(anime, "episodeCount", "episodesCount", "episodeTotal", "episodesTotal", "total"),
+                optInt(ep, "episodeCount", "episodesCount", "episodeTotal", "episodesTotal", "total"));
 
         String[] parts = animeTitle.split("(?i)from"); // 使用不区分大小写的正则表达式
         if (parts.length > 1) {
@@ -403,6 +411,38 @@ public class LeoDanmakuService {
         }
 
         list.add(item);
+    }
+
+    private static String firstOptString(JSONObject object, String... keys) {
+        if (object == null || keys == null) return "";
+        for (String key : keys) {
+            String value = object.optString(key);
+            if (!TextUtils.isEmpty(value) && !"null".equalsIgnoreCase(value)) return value;
+        }
+        return "";
+    }
+
+    private static String firstOptString(JSONObject first, JSONObject second, String... keys) {
+        String value = firstOptString(first, keys);
+        return !TextUtils.isEmpty(value) ? value : firstOptString(second, keys);
+    }
+
+    private static int optInt(JSONObject object, String... keys) {
+        if (object == null || keys == null) return 0;
+        for (String key : keys) {
+            if (!object.has(key)) continue;
+            int value = object.optInt(key, 0);
+            if (value > 0) return value;
+        }
+        return 0;
+    }
+
+    private static int firstPositive(int... values) {
+        if (values == null) return 0;
+        for (int value : values) {
+            if (value > 0) return value;
+        }
+        return 0;
     }
 
     // 自动搜索 - 已修改为返回 SearchResult
@@ -575,7 +615,9 @@ public class LeoDanmakuService {
         }
 
         List<DanmakuItem> matchedItems = new ArrayList<>();
-        DanmakuSpider.log("📥 " + scopeName + " 开始筛选，原始结果数: " + results.size() + "，集数要求: " + episodeInfo.getEpisodeNum());
+        boolean hasEpisodeNum = !TextUtils.isEmpty(episodeInfo.getEpisodeNum());
+        String episodeRequirement = hasEpisodeNum ? episodeInfo.getEpisodeNum() : "无，启用电影/综艺兜底";
+        DanmakuSpider.log("📥 " + scopeName + " 开始筛选，原始结果数: " + results.size() + "，集数要求: " + episodeRequirement);
         for (int i = 0; i < results.size(); i++) {
             DanmakuItem item = results.get(i);
 
@@ -583,18 +625,23 @@ public class LeoDanmakuService {
 
             // 检查年份匹配
             if (!TextUtils.isEmpty(episodeInfo.getEpisodeYear())) {
-                if (!item.title.contains(episodeInfo.getEpisodeYear())) {
-                    DanmakuSpider.log("  ❌ 年份不匹配: " + item.title + " (要求年份: " + episodeInfo.getEpisodeYear() + ")");
-                    isMatch = false;
+                String itemYearText = buildItemCompareText(item);
+                if (!itemYearText.contains(episodeInfo.getEpisodeYear())) {
+                    if (!hasEpisodeNum && !containsAnyYear(itemYearText)) {
+                        DanmakuSpider.log("  ℹ️ 候选无年份信息，保留无集数兜底候选: " + item.title);
+                    } else {
+                        DanmakuSpider.log("  ❌ 年份不匹配: " + item.title + " (要求年份: " + episodeInfo.getEpisodeYear() + ")");
+                        isMatch = false;
+                    }
                 }
             }
 
             // 如果年份匹配成功或没有年份信息，检查集数匹配
-            if (isMatch && !TextUtils.isEmpty(episodeInfo.getEpisodeNum())) {
+            if (isMatch && hasEpisodeNum) {
                 String episodeNum = episodeInfo.getEpisodeNum();
                 try {
                     int epNum = Integer.parseInt(episodeNum);
-                    if (epNum <= 0 || epNum > 9999) { // 防止过大的集数值
+                    if (epNum <= 0 || (epNum > 9999 && !isLikelyDateEpisode(episodeNum))) { // 防止过大的集数值
                         isMatch = false;
                     } else {
                         // 定义多种可能的集数格式
@@ -610,11 +657,16 @@ public class LeoDanmakuService {
                         };
 
                         boolean matchFound = false;
+                        String itemEpisodeText = buildItemEpisodeText(item);
                         for (String format : formats) {
-                            if (item.epTitle.contains(format)) {
+                            if (itemEpisodeText.contains(format)) {
                                 matchFound = true;
                                 break;
                             }
+                        }
+                        if (!matchFound) {
+                            matchFound = itemEpisodeText.matches("(?i).*(?:^|[\\s._\\-\\[\\]【】(（])(?:ep|e)\\s*0*" + epNum + "(?:$|[\\s._\\-\\]】)）]).*")
+                                    || itemEpisodeText.matches(".*(?:^|[\\s._\\-\\[\\]【】(（])0*" + epNum + "(?:$|[\\s._\\-\\]】)）]).*");
                         }
                         if (!matchFound) {
                             DanmakuSpider.log("  ❌ 集数不匹配: " + item.epTitle + " (要求集数: " + episodeNum + ")");
@@ -625,6 +677,11 @@ public class LeoDanmakuService {
                     DanmakuSpider.log("集数格式错误: " + episodeNum);
                     isMatch = false;
                 }
+            }
+
+            if (isMatch && !hasEpisodeNum && !isNoEpisodeAutoCandidate(item, results)) {
+                DanmakuSpider.log("  ❌ 无集数兜底候选类型不匹配: " + item.title + " - " + item.epTitle);
+                isMatch = false;
             }
 
             if (isMatch) {
@@ -640,8 +697,13 @@ public class LeoDanmakuService {
         String bestMatchedName = null; // 记录最佳匹配时使用的名称
 
         // 4. 从筛选结果中选择最佳匹配
-        // 使用的列表：如果 matchedItems 不为空则用它，否则用全部 results
-        List<DanmakuItem> listToSearch = !matchedItems.isEmpty() ? matchedItems : results;
+        if (matchedItems.isEmpty()) {
+            DanmakuSpider.log(hasEpisodeNum
+                    ? "📭 带集数搜索没有命中对应集，放弃本轮自动选择"
+                    : "📭 无集数搜索没有电影/综艺/单集候选，放弃本轮自动选择");
+            return new SearchResult(false, 0, null, null);
+        }
+        List<DanmakuItem> listToSearch = matchedItems;
 
         for (DanmakuItem item : listToSearch) {
             // 准备用于比较的标题
@@ -649,15 +711,16 @@ public class LeoDanmakuService {
 
             String titleToCompare = rawTitle.split("【")[0].trim();
             String s2 = searchKeyword;
-            if (TextUtils.isEmpty(episodeInfo.getEpisodeYear())) {
-                // 使用原始 searchKeyword (不带年份) 进行相似度计算
-                // "先查找(年份)并替换成空字符串"
+            if (TextUtils.isEmpty(episodeInfo.getEpisodeYear()) || !titleToCompare.contains(episodeInfo.getEpisodeYear())) {
                 titleToCompare = titleToCompare.replaceAll("\\s*\\(\\d{4}\\)\\s*", "");
             } else {
                 s2 = searchKeyword + "(" + episodeInfo.getEpisodeYear() + ")";
             }
 
             double similarity = calculateSimilarity(titleToCompare, s2);
+            if (!hasEpisodeNum && isMovieOrVarietyCandidate(item)) {
+                similarity = Math.min(1.0, similarity + 0.03);
+            }
 
             DanmakuSpider.log("🤔 比较: " + titleToCompare + " vs " + s2 + " (相似度: " + similarity + ")");
 
@@ -673,12 +736,69 @@ public class LeoDanmakuService {
         }
 
         if (selectedItem != null) {
-            String listName = !matchedItems.isEmpty() ? "筛选列表" : "全部结果";
-            DanmakuSpider.log("🎯 " + scopeName + " 在 " + listName + " 中自动搜索选择: " + selectedItem.title + " - " + selectedItem.epTitle + " (相似度: " + bestSimilarity + ")");
+            DanmakuSpider.log("🎯 " + scopeName + " 在筛选列表中自动搜索选择: " + selectedItem.title + " - " + selectedItem.epTitle + " (相似度: " + bestSimilarity + ")");
             return new SearchResult(true, bestSimilarity, selectedItem, bestMatchedName);
         }
 
         return new SearchResult(false, 0, null, null);
+    }
+
+    private static String buildItemCompareText(DanmakuItem item) {
+        if (item == null) return "";
+        return safe(item.title) + " " + safe(item.animeTitle) + " " + safe(item.epTitle) + " "
+                + safe(item.shortTitle) + " " + safe(item.from) + " " + safe(item.animeType) + " "
+                + safe(item.typeDescription);
+    }
+
+    private static String buildItemEpisodeText(DanmakuItem item) {
+        if (item == null) return "";
+        return safe(item.epTitle) + " " + safe(item.shortTitle);
+    }
+
+    private static boolean containsAnyYear(String text) {
+        return !TextUtils.isEmpty(text) && text.matches(".*(?:19|20)\\d{2}.*");
+    }
+
+    private static boolean isLikelyDateEpisode(String episodeNum) {
+        if (TextUtils.isEmpty(episodeNum) || !episodeNum.matches("(?:19|20)\\d{6}")) return false;
+        try {
+            int month = Integer.parseInt(episodeNum.substring(4, 6));
+            int day = Integer.parseInt(episodeNum.substring(6, 8));
+            return month >= 1 && month <= 12 && day >= 1 && day <= 31;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static boolean isNoEpisodeAutoCandidate(DanmakuItem item, List<DanmakuItem> scopedResults) {
+        if (item == null) return false;
+        if (item.getEpisodeCount() > 0 && item.getEpisodeCount() <= 1) return true;
+        if (scopedResults != null && scopedResults.size() == 1) return true;
+        if (isMovieOrVarietyCandidate(item)) return true;
+
+        String episodeText = (safe(item.epTitle) + " " + safe(item.shortTitle)).toLowerCase();
+        return containsAny(episodeText, "正片", "全片", "全集", "完整", "特别篇", "特別篇", "sp", "special", "ova");
+    }
+
+    private static boolean isMovieOrVarietyCandidate(DanmakuItem item) {
+        if (item == null) return false;
+        String typeText = (safe(item.animeType) + " " + safe(item.typeDescription) + " "
+                + safe(item.from) + " " + safe(item.title)).toLowerCase();
+        return containsAny(typeText,
+                "movie", "film", "jpmovie", "电影", "電影", "剧场", "劇場", "劇場版", "剧场版", "映画",
+                "variety", "综艺", "綜藝", "真人秀", "脱口秀", "talk show", "tv show", "show");
+    }
+
+    private static boolean containsAny(String text, String... needles) {
+        if (TextUtils.isEmpty(text) || needles == null) return false;
+        for (String needle : needles) {
+            if (!TextUtils.isEmpty(needle) && text.contains(needle.toLowerCase())) return true;
+        }
+        return false;
+    }
+
+    private static String safe(String text) {
+        return text == null ? "" : text;
     }
 
     private static EpisodeInfo copyEpisodeInfoForKeyword(EpisodeInfo source, String keyword) {
