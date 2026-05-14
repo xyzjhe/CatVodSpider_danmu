@@ -13,6 +13,18 @@ import java.util.Set;
  * 弹幕配置实体类
  */
 public class DanmakuConfig {
+    public static final String STYLE_CLASSIC = "经典模式";
+    public static final String STYLE_GRID = "网格模式";
+    public static final String STYLE_DARK_GRID = "深色网格";
+    public static final String STYLE_MODERN_PANEL = "新版面板";
+
+    public static final String[] STYLE_OPTIONS = {
+            STYLE_CLASSIC,
+            STYLE_GRID,
+            STYLE_DARK_GRID,
+            STYLE_MODERN_PANEL
+    };
+
     /**
      * 弹幕API地址
      */
@@ -38,7 +50,7 @@ public class DanmakuConfig {
      */
     public boolean autoPushEnabled;
     /**
-     * 弹幕搜索框样式
+     * 弹幕交互模式
      */
     public String danmakuStyle;
     /**
@@ -58,7 +70,7 @@ public class DanmakuConfig {
         lpHeight = 0.85f;
         lpAlpha = 0.9f;
         autoPushEnabled = false;
-        danmakuStyle = "模板一";
+        danmakuStyle = STYLE_CLASSIC;
         silentMode = true;
         danmakuTimeOffsetMs = 0;
     }
@@ -209,7 +221,7 @@ public class DanmakuConfig {
     public void normalize() {
         if (apiUrls == null) apiUrls = new LinkedHashSet<>();
         if (apiSources == null) apiSources = new ArrayList<>();
-        if (danmakuStyle == null) danmakuStyle = "模板一";
+        danmakuStyle = normalizeDanmakuStyle(danmakuStyle);
 
         List<DanmakuApiSource> oldSources = new ArrayList<>(apiSources);
         if (apiSources.isEmpty() && !apiUrls.isEmpty()) {
@@ -315,11 +327,87 @@ public class DanmakuConfig {
     }
 
     public String getDanmakuStyle() {
+        danmakuStyle = normalizeDanmakuStyle(danmakuStyle);
         return danmakuStyle;
     }
 
     public void setDanmakuStyle(String danmakuStyle) {
-        this.danmakuStyle = danmakuStyle;
+        this.danmakuStyle = normalizeDanmakuStyle(danmakuStyle);
+    }
+
+    public String getDanmakuStyleDisplayName() {
+        return getDanmakuStyle();
+    }
+
+    public boolean isClassicDanmakuStyle() {
+        return STYLE_CLASSIC.equals(getDanmakuStyle());
+    }
+
+    public boolean isGridDanmakuStyle() {
+        return STYLE_GRID.equals(getDanmakuStyle()) || isDarkGridDanmakuStyle();
+    }
+
+    public boolean isDarkGridDanmakuStyle() {
+        return STYLE_DARK_GRID.equals(getDanmakuStyle());
+    }
+
+    public boolean isModernPanelDanmakuStyle() {
+        return STYLE_MODERN_PANEL.equals(getDanmakuStyle());
+    }
+
+    public static String normalizeDanmakuStyle(String danmakuStyle) {
+        if (danmakuStyle == null) return STYLE_CLASSIC;
+        String style = danmakuStyle.trim();
+        if (style.length() == 0) return STYLE_CLASSIC;
+
+        if (STYLE_CLASSIC.equals(style)
+                || "模板一".equals(style)
+                || "经典".equals(style)
+                || "旧版".equals(style)
+                || "旧版模式".equals(style)
+                || "旧版交互".equals(style)
+                || "classic".equalsIgnoreCase(style)
+                || "template1".equalsIgnoreCase(style)
+                || "template_1".equalsIgnoreCase(style)) {
+            return STYLE_CLASSIC;
+        }
+
+        if (STYLE_GRID.equals(style)
+                || "模板二".equals(style)
+                || "网格".equals(style)
+                || "grid".equalsIgnoreCase(style)
+                || "template2".equalsIgnoreCase(style)
+                || "template_2".equalsIgnoreCase(style)) {
+            return STYLE_GRID;
+        }
+
+        if (STYLE_DARK_GRID.equals(style)
+                || "模板三".equals(style)
+                || "深色".equals(style)
+                || "深色模式".equals(style)
+                || "dark".equalsIgnoreCase(style)
+                || "dark_grid".equalsIgnoreCase(style)
+                || "template3".equalsIgnoreCase(style)
+                || "template_3".equalsIgnoreCase(style)) {
+            return STYLE_DARK_GRID;
+        }
+
+        if (STYLE_MODERN_PANEL.equals(style)
+                || "模板四".equals(style)
+                || "新版".equals(style)
+                || "新版模式".equals(style)
+                || "新版交互".equals(style)
+                || "现代面板".equals(style)
+                || "面板模式".equals(style)
+                || "modern".equalsIgnoreCase(style)
+                || "modern_panel".equalsIgnoreCase(style)
+                || "new_panel".equalsIgnoreCase(style)
+                || "template4".equalsIgnoreCase(style)
+                || "template_4".equalsIgnoreCase(style)) {
+            return STYLE_MODERN_PANEL;
+        }
+
+        return STYLE_CLASSIC;
     }
 
     public boolean isSilentMode() {

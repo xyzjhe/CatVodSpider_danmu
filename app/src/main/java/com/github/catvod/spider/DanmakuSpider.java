@@ -224,9 +224,9 @@ public class DanmakuSpider extends Spider {
             JSONObject lpConfigVod = createVod("lp_config", "布局配置", "", "调整弹窗大小和透明度");
             list.put(lpConfigVod);
 
-            // 创建弹幕UI风格切换按钮
-            JSONObject styleVod = createVod("danmaku_style", "弹幕UI风格", "",
-                    "当前: " + config.getDanmakuStyle());
+            // 创建弹幕交互模式切换按钮
+            JSONObject styleVod = createVod("danmaku_style", "弹幕交互模式", "",
+                    "当前: " + config.getDanmakuStyleDisplayName());
             list.put(styleVod);
 
             // 只有当Go代理资源文件存在时才显示相关按钮
@@ -348,7 +348,7 @@ public class DanmakuSpider extends Spider {
                     id.equals("silent_mode") ? "静默模式" :
                     id.equals("danmaku_offset") ? "弹幕时间偏移" :
                     id.equals("log") ? "查看日志" : id.equals("lp_config") ? "布局配置" :
-                            id.equals("danmaku_style") ? "弹幕 UI 风格" :
+                            id.equals("danmaku_style") ? "弹幕交互模式" :
                             id.equals("proxy_status") ? "Go 代理状态" :
                             id.equals("proxy_restart") ? "重启 Go 代理" : "Leo 弹幕设置");
             vod.put("vod_pic", "");
@@ -361,7 +361,7 @@ public class DanmakuSpider extends Spider {
                             (config.isSilentMode() ? "已开启" : "已关闭") :
                     id.equals("danmaku_offset") ? DanmakuUtils.formatOffsetLabel(config.getDanmakuTimeOffsetMs()) :
                     id.equals("log") ? "弹幕/Go 代理日志" : id.equals("lp_config") ? "调整弹窗大小和透明度" :
-                            id.equals("danmaku_style") ? "当前：" + config.getDanmakuStyle() :
+                            id.equals("danmaku_style") ? "当前：" + config.getDanmakuStyleDisplayName() :
                             id.equals("proxy_status") ? proxyStatusText :
                             id.equals("proxy_restart") ? "点击重启代理服务" : "请稍候...");
             vod.put("vod_play_url", "");
@@ -395,7 +395,7 @@ public class DanmakuSpider extends Spider {
                     } else if ("danmaku_offset".equals(item.getString("vod_id"))) {
                         item.put("vod_remarks", DanmakuUtils.formatOffsetLabel(config.getDanmakuTimeOffsetMs()));
                     } else if ("danmaku_style".equals(item.getString("vod_id"))) {
-                        item.put("vod_remarks", "当前：" + config.getDanmakuStyle());
+                        item.put("vod_remarks", "当前：" + config.getDanmakuStyleDisplayName());
                     } else if ("proxy_status".equals(item.getString("vod_id"))) {
                         String status = GoProxyManager.isProxyRunning.get() ? "运行中" : "已停止";
                         String health = GoProxyManager.isProxyHealthy() ? "健康" : "异常";

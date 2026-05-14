@@ -1902,7 +1902,7 @@ public class DanmakuScanner {
             optionsList.add("🔇 静默模式");
             optionsList.add("💬 弹幕配置");
             optionsList.add("🎨 布局配置");
-            optionsList.add("✨ 弹幕 UI 风格");
+            optionsList.add("✨ 弹幕交互模式");
             optionsList.add("⏱ 弹幕时间偏移");
             optionsList.add("📝 查看日志");
 
@@ -1968,8 +1968,8 @@ public class DanmakuScanner {
                             DanmakuSpider.log("[菜单] 打开布局配置");
                             DanmakuUIHelper.showLpConfigDialog(activity);
                             break;
-                        case 5: // 弹幕 UI 风格
-                            DanmakuSpider.log("[菜单] 打开弹幕 UI 风格");
+                        case 5: // 弹幕交互模式
+                            DanmakuSpider.log("[菜单] 打开弹幕交互模式");
                             DanmakuUIHelper.showDanmakuStyleDialog(activity);
                             break;
                         case 6: // 弹幕时间偏移

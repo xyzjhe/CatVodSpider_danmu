@@ -1033,7 +1033,7 @@ public class DanmakuUIHelper {
                 mainLayout.setPadding(dpToPx(activity, 24), dpToPx(activity, 20), dpToPx(activity, 24), dpToPx(activity, 20));
 
                 TextView title = new TextView(activity);
-                title.setText("弹幕UI风格");
+                title.setText("弹幕交互模式");
                 title.setTextSize(24);
                 title.setTextColor(PRIMARY_COLOR);
                 title.setGravity(Gravity.CENTER);
@@ -1042,13 +1042,14 @@ public class DanmakuUIHelper {
                 mainLayout.addView(title);
 
                 DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
-                String[] styles = {"模板一", "模板二", "模板三"};
+                String[] styles = DanmakuConfig.STYLE_OPTIONS;
                 String currentStyle = config.getDanmakuStyle();
                 
                 AlertDialog dialog = builder.create();
 
                 for (String style : styles) {
-                    Button styleBtn = createStyledButton(activity, style, style.equals(currentStyle) ? PRIMARY_COLOR : GRAY_INACTIVE);
+                    Button styleBtn = createStyledButton(activity, buildDanmakuStyleOptionText(style),
+                            style.equals(currentStyle) ? PRIMARY_COLOR : GRAY_INACTIVE);
                     LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(activity, 44));
                     btnParams.setMargins(0, 0, 0, dpToPx(activity, 10));
@@ -1058,7 +1059,7 @@ public class DanmakuUIHelper {
                     styleBtn.setOnClickListener(v -> {
                         config.setDanmakuStyle(style);
                         DanmakuConfigManager.saveConfig(activity, config);
-                        Utils.safeShowToast(activity, "弹幕UI风格已切换为: " + style);
+                        Utils.safeShowToast(activity, "弹幕交互模式已切换为: " + config.getDanmakuStyleDisplayName());
                         dialog.dismiss();
                     });
                 }
@@ -1071,6 +1072,14 @@ public class DanmakuUIHelper {
                 e.printStackTrace();
             }
         });
+    }
+
+    private static String buildDanmakuStyleOptionText(String style) {
+        if (DanmakuConfig.STYLE_CLASSIC.equals(style)) return style + "（原模板一）";
+        if (DanmakuConfig.STYLE_GRID.equals(style)) return style + "（原模板二）";
+        if (DanmakuConfig.STYLE_DARK_GRID.equals(style)) return style + "（原模板三）";
+        if (DanmakuConfig.STYLE_MODERN_PANEL.equals(style)) return style + "（原模板四）";
+        return DanmakuConfig.normalizeDanmakuStyle(style);
     }
 
 
@@ -1594,7 +1603,8 @@ public class DanmakuUIHelper {
                     }
 
                     DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
-                    boolean isTemplate3 = config.getDanmakuStyle().equals("模板三");
+                    boolean isTemplate3 = config.isDarkGridDanmakuStyle();
+                    boolean isModernPanel = config.isModernPanelDanmakuStyle();
 
                     AlertDialog.Builder builder = new AlertDialog.Builder(activity);
                     LinearLayout mainLayout = new LinearLayout(activity);
@@ -1763,7 +1773,8 @@ public class DanmakuUIHelper {
 
                                             java.util.Map<String, List<DanmakuItem>> groupedResults = new java.util.LinkedHashMap<>();
                                             for (DanmakuItem item : results) {
-                                                String groupName = buildSearchResultGroupName(activity, item);
+                                                String groupName = isModernPanel ? buildSearchResultGroupName(activity, item)
+                                                        : (item.from != null ? item.from : "默认");
                                                 if (!groupedResults.containsKey(groupName)) {
                                                     groupedResults.put(groupName, new java.util.ArrayList<>());
                                                 }
@@ -1773,9 +1784,14 @@ public class DanmakuUIHelper {
                                             java.util.List<String> tabs = new java.util.ArrayList<>(groupedResults.keySet());
                                             java.util.Collections.sort(tabs);
 
-                                            int selectedTabIndex = findInitialSearchTabIndex(tabs, groupedResults);
-                                            renderSearchSourceSelector(tabContainer, resultContainer, groupedResults, tabs,
-                                                    selectedTabIndex, activity, dialog, isTemplate3);
+                                            if (isModernPanel) {
+                                                int selectedTabIndex = findInitialSearchTabIndex(tabs, groupedResults);
+                                                renderSearchSourceSelector(tabContainer, resultContainer, groupedResults, tabs,
+                                                        selectedTabIndex, activity, dialog, isTemplate3);
+                                            } else {
+                                                renderLegacySearchSourceTabs(tabContainer, resultContainer, groupedResults, tabs,
+                                                        activity, dialog, isTemplate3);
+                                            }
                                         }
                                     });
                                 }
@@ -1825,6 +1841,81 @@ public class DanmakuUIHelper {
             }
         }
         return 0;
+    }
+
+    private static void renderLegacySearchSourceTabs(LinearLayout tabContainer,
+                                                     LinearLayout resultContainer,
+                                                     java.util.Map<String, List<DanmakuItem>> groupedResults,
+                                                     List<String> tabs,
+                                                     Activity activity,
+                                                     AlertDialog dialog,
+                                                     boolean isTemplate3) {
+        tabContainer.removeAllViews();
+        if (tabs == null || tabs.isEmpty()) {
+            tabContainer.setVisibility(View.GONE);
+            resultContainer.removeAllViews();
+            return;
+        }
+
+        tabContainer.setVisibility(View.VISIBLE);
+        updateSearchSourceContainerHeight(tabContainer, activity, 48);
+        int selectedIndex = findInitialSearchTabIndex(tabs, groupedResults);
+
+        for (int i = 0; i < tabs.size(); i++) {
+            String tabName = tabs.get(i);
+            Button tabBtn = isTemplate3 ?
+                    createDarkSolidButton(activity, tabName, DARK_PRIMARY_COLOR) :
+                    createStyledButton(activity, tabName, PRIMARY_COLOR);
+            tabBtn.setTag(tabName);
+            tabBtn.setPadding(dpToPx(activity, 15), dpToPx(activity, 10), dpToPx(activity, 15), dpToPx(activity, 10));
+
+            LinearLayout.LayoutParams tabParams = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1);
+            tabParams.setMargins(dpToPx(activity, 5), 0, dpToPx(activity, 5), 0);
+            tabBtn.setLayoutParams(tabParams);
+            tabBtn.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+                @Override
+                public void onFocusChange(View v, boolean hasFocus) {
+                    Object tag = v.getTag();
+                    boolean active = tag instanceof Boolean && (Boolean) tag;
+                    if (isTemplate3) {
+                        ((Button) v).setTextColor(DARK_TEXT_PRIMARY);
+                        v.setBackground(createRoundedTransparentDrawable(hasFocus ? DARK_PRIMARY_DARK :
+                                (active ? DARK_PRIMARY_COLOR : DARK_INACTIVE)));
+                    } else {
+                        ((Button) v).setTextColor(Color.WHITE);
+                        v.setBackground(createRoundedBackgroundDrawable(hasFocus ? PRIMARY_DARK :
+                                (active ? PRIMARY_COLOR : GRAY_INACTIVE)));
+                    }
+                }
+            });
+
+            final int tabIndex = i;
+            tabBtn.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v1) {
+                    for (int j = 0; j < tabContainer.getChildCount(); j++) {
+                        updateLegacySourceTabState((Button) tabContainer.getChildAt(j), j == tabIndex, isTemplate3);
+                    }
+                    showResultsForTab(resultContainer, groupedResults.get(tabName), activity, dialog);
+                }
+            });
+
+            tabContainer.addView(tabBtn);
+            updateLegacySourceTabState(tabBtn, i == selectedIndex, isTemplate3);
+        }
+
+        showResultsForTab(resultContainer, groupedResults.get(tabs.get(selectedIndex)), activity, dialog);
+    }
+
+    private static void updateLegacySourceTabState(Button button, boolean isActive, boolean isTemplate3) {
+        button.setTag(Boolean.valueOf(isActive));
+        if (isTemplate3) {
+            button.setBackground(createRoundedTransparentDrawable(isActive ? DARK_PRIMARY_COLOR : DARK_INACTIVE));
+            button.setTextColor(DARK_TEXT_PRIMARY);
+        } else {
+            button.setBackground(createRoundedBackgroundDrawable(isActive ? PRIMARY_COLOR : GRAY_INACTIVE));
+            button.setTextColor(Color.WHITE);
+        }
     }
 
     private static void renderSearchSourceSelector(LinearLayout tabContainer,
@@ -2304,9 +2395,8 @@ public class DanmakuUIHelper {
         sortAnimeTitlesByKeyword(animeTitles);
 
         DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
-        boolean isTemplate3 = config.getDanmakuStyle().equals("模板三");
-
-        boolean useGrid = config.getDanmakuStyle().equals("模板二") || isTemplate3;
+        boolean isTemplate3 = config.isDarkGridDanmakuStyle();
+        boolean useGrid = config.isGridDanmakuStyle();
 
         if (useGrid) {
             // 使用网格布局
