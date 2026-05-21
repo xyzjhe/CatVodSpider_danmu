@@ -62,8 +62,12 @@ public class DanmakuConfig {
      */
     public int danmakuTimeOffsetMs;
 
+    /**
+     * 代理类型：0=自动(默认)，1=Go代理，2=Java代理
+     */
+    public int proxyType;
+
     public DanmakuConfig() {
-        // 设置默认值
         apiUrls = new LinkedHashSet<>();
         apiSources = new ArrayList<>();
         lpWidth = 0.9f;
@@ -73,6 +77,7 @@ public class DanmakuConfig {
         danmakuStyle = STYLE_CLASSIC;
         silentMode = true;
         danmakuTimeOffsetMs = 0;
+        proxyType = 0;
     }
 
     public void updateFromJson(JSONObject json) {
@@ -107,6 +112,9 @@ public class DanmakuConfig {
             setDanmakuTimeOffsetMs(json.optInt("danmakuOffsetMs", danmakuTimeOffsetMs));
         } else if (json.has("danmakuOffset")) {
             setDanmakuTimeOffsetMs((int) Math.round(json.optDouble("danmakuOffset", danmakuTimeOffsetMs / 1000.0) * 1000));
+        }
+        if (json.has("proxyType")) {
+            setProxyType(json.optInt("proxyType", proxyType));
         }
     }
 
@@ -428,5 +436,15 @@ public class DanmakuConfig {
         if (danmakuTimeOffsetMs > 600000) danmakuTimeOffsetMs = 600000;
         if (danmakuTimeOffsetMs < -600000) danmakuTimeOffsetMs = -600000;
         this.danmakuTimeOffsetMs = danmakuTimeOffsetMs;
+    }
+
+    public int getProxyType() {
+        return proxyType;
+    }
+
+    public void setProxyType(int proxyType) {
+        if (proxyType < 0) proxyType = 0;
+        if (proxyType > 2) proxyType = 0;
+        this.proxyType = proxyType;
     }
 }

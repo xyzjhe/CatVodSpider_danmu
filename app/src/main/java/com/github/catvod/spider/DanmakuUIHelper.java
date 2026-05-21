@@ -1379,10 +1379,11 @@ public class DanmakuUIHelper {
                 title.setTypeface(null, android.graphics.Typeface.BOLD);
                 mainLayout.addView(title);
 
-                // 判断是否有Go代理
-                final boolean hasGoProxy = GoProxyManager.isGoProxyAssetExists();
+                // 判断是否有代理
+                final int activeProxyType = ProxyManager.getActiveProxyType();
+                final boolean hasProxy = activeProxyType != ProxyManager.PROXY_TYPE_NONE;
 
-                // 当前选中的页签索引（0=弹幕日志，1=Go代理日志）
+                // 当前选中的页签索引（0=弹幕日志，1=代理日志）
                 final int[] currentTab = {0};
                 // 当前排序状态（false=正序，true=倒序）
                 final boolean[] isReversed = {false};
@@ -1416,10 +1417,11 @@ public class DanmakuUIHelper {
                 danmakuTabParams.setMargins(0, 0, dpToPx(activity, 4), 0);
                 danmakuTabBtn.setLayoutParams(danmakuTabParams);
 
-                // Go代理日志页签按钮（仅当存在时显示）
+                // 代理日志页签按钮（仅当存在时显示）
                 Button goProxyTabBtn = null;
-                if (hasGoProxy) {
-                    goProxyTabBtn = createTabButton(activity, "Go代理日志", false);
+                if (hasProxy) {
+                    String tabLabel = ProxyManager.getProxyTypeShortName() + "代理日志";
+                    goProxyTabBtn = createTabButton(activity, tabLabel, false);
                     LinearLayout.LayoutParams goProxyTabParams = new LinearLayout.LayoutParams(
                             0, dpToPx(activity, 36), 1);
                     goProxyTabParams.setMargins(dpToPx(activity, 4), 0, 0, 0);
@@ -1489,8 +1491,7 @@ public class DanmakuUIHelper {
                         currentTab[0] = 1;
                         updateTabButtonState(danmakuTabBtn, false);
                         updateTabButtonState(finalGoProxyTabBtnForClick, true);
-                        // Go代理日志支持倒序
-                        logText.setText(GoProxyManager.getLogContent(isReversed[0]));
+                        logText.setText(ProxyManager.getLogContent(isReversed[0]));
                         // 倒序时滚动到顶部，正序时滚动到底部
                         scrollView.post(() -> scrollView.fullScroll(isReversed[0] ? ScrollView.FOCUS_UP : ScrollView.FOCUS_DOWN));
                     });
@@ -1502,11 +1503,9 @@ public class DanmakuUIHelper {
                     sortButton.setText(isReversed[0] ? "排序: 倒序" : "排序: 正序");
 
                     if (currentTab[0] == 0) {
-                        // 弹幕日志支持倒序
                         logText.setText(DanmakuSpider.getLogContent(isReversed[0]));
                     } else {
-                        // Go代理日志支持倒序
-                        logText.setText(GoProxyManager.getLogContent(isReversed[0]));
+                        logText.setText(ProxyManager.getLogContent(isReversed[0]));
                     }
                     // 倒序时滚动到顶部，正序时滚动到底部
                     scrollView.post(() -> scrollView.fullScroll(isReversed[0] ? ScrollView.FOCUS_UP : ScrollView.FOCUS_DOWN));
@@ -1518,8 +1517,8 @@ public class DanmakuUIHelper {
                         DanmakuSpider.clearLogs();
                         logText.setText(DanmakuSpider.getLogContent(isReversed[0]));
                     } else {
-                        GoProxyManager.clearLogs();
-                        logText.setText(GoProxyManager.getLogContent(isReversed[0]));
+                        ProxyManager.clearLogs();
+                        logText.setText(ProxyManager.getLogContent(isReversed[0]));
                     }
                 });
 

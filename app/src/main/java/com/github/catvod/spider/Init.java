@@ -42,18 +42,17 @@ public class Init {
         get().app = ((Application) context);
         Proxy.init();
 
-        // 初始化并启动GoProxy（如果需要），并启动健康检查
-        GoProxyManager.initialize(context);
+        ProxyManager.initialize(context);
 
-        // 删除弹幕缓存
-        DanmakuSpider.clearCache(context);
-
-        // 初始化
-        DanmakuSpider.doInitWork(context,"");
-
-        // 启动Hook监控
-        DanmakuScanner.startHookMonitor();
-        DanmakuSpider.log("Leo弹幕监控已启动");
+//        // 删除弹幕缓存
+//        DanmakuSpider.clearCache(context);
+//
+//        // 初始化
+//        DanmakuSpider.doInitWork(context,"");
+//
+//        // 启动Hook监控
+//        DanmakuScanner.startHookMonitor();
+//        DanmakuSpider.log("Leo弹幕监控已启动");
     }
     public static void execute(Runnable runnable) {
         get().executor.execute(runnable);

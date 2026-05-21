@@ -309,10 +309,24 @@ public class GoProxyManager {
         });
     }
 
-    /**
-     * 检查Go代理可执行文件是否存在于assets中
-     * @return true 如果资源文件存在
-     */
+    public static void killGoProxy() {
+        try {
+            if (TextUtils.isEmpty(goProxyExecutableName)) return;
+            Process exec = Runtime.getRuntime().exec("/system/bin/sh");
+            try (DataOutputStream dos = new DataOutputStream(exec.getOutputStream())) {
+                dos.writeBytes("kill $(ps -ef | grep '" + goProxyExecutableName + "' | grep -v grep | awk '{print $2}') 2>/dev/null\n");
+                dos.flush();
+                dos.writeBytes("exit\n");
+                dos.flush();
+            }
+            exec.waitFor();
+            isProxyRunning.set(false);
+            log("Go代理进程已终止");
+        } catch (Exception e) {
+            log("终止Go代理进程异常: " + e.getMessage());
+        }
+    }
+
     public static boolean isGoProxyAssetExists() {
         try {
             if (TextUtils.isEmpty(goProxyExecutableName)) {
