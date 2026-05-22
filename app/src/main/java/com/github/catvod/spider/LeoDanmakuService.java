@@ -1102,6 +1102,7 @@ public class LeoDanmakuService {
         List<String> names = new ArrayList<>();
         names.add(keyword);
         copy.setEpisodeNames(names);
+        copy.setSearchCacheKey(source.getSearchCacheKey());
         copy.setEpisodeNum(source.getEpisodeNum());
         copy.setEpisodeYear(source.getEpisodeYear());
         copy.setEpisodeSeasonNum(source.getEpisodeSeasonNum());

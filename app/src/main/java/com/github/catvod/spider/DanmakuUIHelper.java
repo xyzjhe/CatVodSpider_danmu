@@ -1906,8 +1906,7 @@ public class DanmakuUIHelper {
 
                     final EditText searchInput = new EditText(activity);
                     searchInput.setHint("输入关键词搜索弹幕...");
-                    String initialKeyword = episodeInfo != null && episodeInfo.getEpisodeNames() != null && !episodeInfo.getEpisodeNames().isEmpty() 
-                            ? episodeInfo.getEpisodeNames().get(0) : "";
+                    String initialKeyword = getStableSearchCacheKey(episodeInfo);
                     String cachedKeyword = SharedPreferencesService.getSearchKeywordCache(activity, initialKeyword);
                     searchInput.setText(cachedKeyword);
                     searchInput.setHintTextColor(isTemplate3 ? DARK_TEXT_TERTIARY : TEXT_TERTIARY);
@@ -1995,8 +1994,7 @@ public class DanmakuUIHelper {
                             }
                             currentSearchKeyword = keyword;
 
-                            String cacheKey = episodeInfo != null && episodeInfo.getEpisodeNames() != null && !episodeInfo.getEpisodeNames().isEmpty() 
-                                    ? episodeInfo.getEpisodeNames().get(0) : "";
+                            String cacheKey = getStableSearchCacheKey(episodeInfo);
                             if (!keyword.equals(cacheKey)) {
                                 SharedPreferencesService.saveSearchKeywordCache(activity, cacheKey, keyword);
                                 DanmakuSpider.log("已保存新的搜索缓存: " + cacheKey + " -> " + keyword);
@@ -2023,6 +2021,7 @@ public class DanmakuUIHelper {
                                     List<String> names = new ArrayList<>();
                                     names.add(keyword);
                                     searchEpisodeInfo.setEpisodeNames(names);
+                                    searchEpisodeInfo.setSearchCacheKey(getStableSearchCacheKey(episodeInfo));
                                     // 如果原 episodeInfo 有集数信息，保留它
                                     if (episodeInfo != null && !TextUtils.isEmpty(episodeInfo.getEpisodeNum())) {
                                         searchEpisodeInfo.setEpisodeNum(episodeInfo.getEpisodeNum());
@@ -2103,6 +2102,17 @@ public class DanmakuUIHelper {
     private static int dpToPx(Context context, int dp) {
         float density = context.getResources().getDisplayMetrics().density;
         return Math.round(dp * density);
+    }
+
+    private static String getStableSearchCacheKey(EpisodeInfo episodeInfo) {
+        if (episodeInfo == null) return "";
+        if (!TextUtils.isEmpty(episodeInfo.getSearchCacheKey())) {
+            return episodeInfo.getSearchCacheKey();
+        }
+        if (episodeInfo.getEpisodeNames() != null && !episodeInfo.getEpisodeNames().isEmpty()) {
+            return episodeInfo.getEpisodeNames().get(episodeInfo.getEpisodeNames().size() > 1 ? 1 : 0);
+        }
+        return "";
     }
 
     private static int findInitialSearchTabIndex(List<String> tabs, java.util.Map<String, List<DanmakuItem>> groupedResults) {

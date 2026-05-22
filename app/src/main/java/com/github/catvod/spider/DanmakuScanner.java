@@ -369,6 +369,7 @@ public class DanmakuScanner {
         EpisodeInfo episodeInfo = new EpisodeInfo();
         episodeInfo.setEpisodeNum(episodeNum);
         episodeInfo.setEpisodeNames(episodeNames);
+        episodeInfo.setSearchCacheKey(extractTitle2);
         episodeInfo.setEpisodeYear(year);
         episodeInfo.setEpisodeSeasonNum(seasonNum);
         episodeInfo.setEpisodeDateCode(episodeDateCode);
@@ -1962,6 +1963,7 @@ public class DanmakuScanner {
         List<String> names = new ArrayList<>();
         if (source.getEpisodeNames() != null) names.addAll(source.getEpisodeNames());
         copy.setEpisodeNames(names);
+        copy.setSearchCacheKey(source.getSearchCacheKey());
         copy.setEpisodeNum(source.getEpisodeNum());
         copy.setEpisodeYear(source.getEpisodeYear());
         copy.setEpisodeSeasonNum(source.getEpisodeSeasonNum());

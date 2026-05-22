@@ -5,6 +5,7 @@ import java.util.List;
 public class EpisodeInfo {
     private String episodeNum;
     private List<String> episodeNames;
+    private String searchCacheKey;
     private String episodeYear;
     private String episodeSeasonNum;
     private String episodeDateCode;
@@ -27,6 +28,14 @@ public class EpisodeInfo {
 
     public void setEpisodeNames(List<String> episodeNames) {
         this.episodeNames = episodeNames;
+    }
+
+    public String getSearchCacheKey() {
+        return searchCacheKey;
+    }
+
+    public void setSearchCacheKey(String searchCacheKey) {
+        this.searchCacheKey = searchCacheKey;
     }
 
     public String getEpisodeYear() {
@@ -90,6 +99,7 @@ public class EpisodeInfo {
         return "EpisodeInfo{" +
                 "episodeNum='" + episodeNum + '\'' +
                 ", episodeNames=" + episodeNames +
+                ", searchCacheKey='" + searchCacheKey + '\'' +
                 ", episodeYear='" + episodeYear + '\'' +
                 ", episodeSeasonNum='" + episodeSeasonNum + '\'' +
                 ", episodeDateCode='" + episodeDateCode + '\'' +
