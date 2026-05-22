@@ -23,7 +23,8 @@ public class GoProxyLibrary {
             }
 
             java.io.File outDir = Init.context().getDir("goproxy_lib", android.content.Context.MODE_PRIVATE);
-            java.io.File outFile = new java.io.File(outDir, "libgoproxy.so");
+            String runtimeLibName = buildRuntimeLibName(abi);
+            java.io.File outFile = new java.io.File(outDir, runtimeLibName);
             try (java.io.FileOutputStream fos = new java.io.FileOutputStream(outFile)) {
                 byte[] buf = new byte[8192];
                 int n;
@@ -34,7 +35,7 @@ public class GoProxyLibrary {
             System.load(outFile.getAbsolutePath());
             libraryLoaded = true;
             loadedAbi = abi;
-            ProxyManager.log("[JNI] 加载成功: " + abi + "/libgoproxy.so");
+            ProxyManager.log("[JNI] 加载成功: " + libName);
             return true;
         } catch (UnsatisfiedLinkError e) {
             ProxyManager.log("[JNI] 链接错误: " + e.getMessage());
@@ -58,7 +59,15 @@ public class GoProxyLibrary {
         return libraryLoaded;
     }
 
+    private static String buildRuntimeLibName(String abi) {
+        ClassLoader loader = GoProxyLibrary.class.getClassLoader();
+        int loaderId = loader == null ? 0 : System.identityHashCode(loader);
+        String safeAbi = abi == null ? "unknown" : abi.replaceAll("[^A-Za-z0-9_\\-]", "_");
+        return "libgoproxy_" + safeAbi + "_" + Integer.toHexString(loaderId) + ".so";
+    }
+
     public static native int startProxy(int port);
     public static native int stopProxy();
     public static native int isProxyRunning();
+    public static native String getLastError();
 }

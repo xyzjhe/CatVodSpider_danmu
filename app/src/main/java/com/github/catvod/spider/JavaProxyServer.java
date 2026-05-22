@@ -111,7 +111,7 @@ public class JavaProxyServer {
             if ("/".equals(path)) {
                 writeSimpleResponse(out, 200, "text/plain", "ok");
             } else if ("/health".equals(path)) {
-                String json = "{\"status\":\"healthy\",\"timestamp\":\"" +
+                String json = "{\"status\":\"healthy\",\"type\":\"java\",\"port\":" + port + ",\"timestamp\":\"" +
                         new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ").format(new java.util.Date()) + "\"}";
                 writeSimpleResponse(out, 200, "application/json", json);
             } else if ("/proxy".equals(path)) {

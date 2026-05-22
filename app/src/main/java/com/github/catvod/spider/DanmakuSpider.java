@@ -218,7 +218,6 @@ public class DanmakuSpider extends Spider {
                 }
             }
         }
-
         DanmakuConfigManager.saveConfig(context, config);
 
         if (initialized) return;

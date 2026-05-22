@@ -23,7 +23,9 @@ public class ProxyManager {
     public static final int PROXY_TYPE_JAVA = 2;
 
     public static final int PROXY_PORT = 5575;
+    public static final int JAVA_BACKEND_PORT = 5577;
     private static final String HEALTH_CHECK_URL = "http://127.0.0.1:" + PROXY_PORT + "/health";
+    private static final String JAVA_HEALTH_CHECK_URL = "http://127.0.0.1:" + JAVA_BACKEND_PORT + "/health";
 
     private static final ExecutorService executor = Executors.newFixedThreadPool(5);
     private static final AtomicBoolean isProxyRunning = new AtomicBoolean(false);
@@ -31,6 +33,7 @@ public class ProxyManager {
 
     private static volatile int preferredProxyType = PROXY_TYPE_NONE;
     private static volatile JavaProxyServer javaProxyServer;
+    private static volatile ProxyRelayServer relayServer;
 
     private static final List<String> proxyLogBuffer = new CopyOnWriteArrayList<>();
     private static final int MAX_LOG_SIZE = 1000;
@@ -48,33 +51,38 @@ public class ProxyManager {
     }
 
     public static void initialize(Context context) {
+        ensureRelayServer();
         int saved = DanmakuConfigManager.loadConfig(context).getProxyType();
         preferredProxyType = saved;
 
-        if (GoProxyManager.isGoProxyAssetExists() && preferredProxyType != PROXY_TYPE_JAVA) {
+        // 恢复按用户偏好启动代理：仅在明确选择Go代理时才走SO/JNI路径。
+        if (GoProxyManager.isGoProxyAssetExists() && preferredProxyType == PROXY_TYPE_GO) {
             boolean goStarted = startGoProxySync(context);
             if (goStarted) {
                 activeProxyType.set(PROXY_TYPE_GO);
                 isProxyRunning.set(true);
-                log("[初始化] Go代理启动成功");
+                log("[初始化] Go代理启动成功，后端端口: " + GoProxyManager.getCurrentBackendPort());
                 startHealthCheck(context);
                 return;
             }
             GoProxyManager.killGoProxy();
-            waitForPortReleased();
             log("[降级] Go代理启动失败，自动切换到Java代理");
         }
 
+        if (GoProxyManager.isGoProxyAssetExists() && preferredProxyType != PROXY_TYPE_GO) {
+            log("[初始化] 跳过SO代理自动启动，默认使用Java代理");
+        }
         startJavaProxy(context);
     }
 
     private static boolean startGoProxySync(Context context) {
         final AtomicBoolean result = new AtomicBoolean(false);
         final CountDownLatch latch = new CountDownLatch(1);
+        final int sessionId = GoProxyManager.beginStartSession();
 
         GoProxyManager.execute(() -> {
             try {
-                GoProxyManager.startGoProxyOnceSync(context);
+                GoProxyManager.startGoProxyOnceSync(context, sessionId);
                 result.set(GoProxyManager.isProxyRunning.get());
             } catch (Exception e) {
                 log("[Go代理] 同步启动异常: " + e.getMessage());
@@ -88,7 +96,9 @@ public class ProxyManager {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log("[Go代理] 同步启动等待中断");
+            GoProxyManager.cancelStartSession(sessionId);
         }
+        if (!result.get()) GoProxyManager.cancelStartSession(sessionId);
         return result.get();
     }
 
@@ -99,20 +109,17 @@ public class ProxyManager {
             try {
                 log("[切换] → Go代理");
                 stopHealthCheck();
-                stopJavaProxy();
-                GoProxyManager.killGoProxy();
-                waitForPortReleased();
 
                 boolean goStarted = startGoProxySync(context.getApplicationContext());
                 if (goStarted) {
+                    stopJavaProxy();
                     activeProxyType.set(PROXY_TYPE_GO);
                     isProxyRunning.set(true);
-                    log("[切换] Go代理启动成功");
+                    log("[切换] Go代理启动成功，后端端口: " + GoProxyManager.getCurrentBackendPort());
                     startHealthCheck(context.getApplicationContext());
                     saveProxyType(context.getApplicationContext(), PROXY_TYPE_GO);
                 } else {
                     GoProxyManager.killGoProxy();
-                    waitForPortReleased();
                     log("[降级] Go代理启动失败，回退到Java代理");
                     startJavaProxy(context.getApplicationContext());
                 }
@@ -131,12 +138,9 @@ public class ProxyManager {
             try {
                 log("[切换] → Java代理");
                 stopHealthCheck();
-                if (activeProxyType.get() == PROXY_TYPE_GO) {
-                    GoProxyManager.killGoProxy();
-                    waitForPortReleased();
-                }
                 boolean success = startJavaProxy(context.getApplicationContext());
                 if (success) {
+                    GoProxyManager.killGoProxy();
                     saveProxyType(context.getApplicationContext(), PROXY_TYPE_JAVA);
                 }
             } catch (Exception e) {
@@ -157,22 +161,19 @@ public class ProxyManager {
                 stopHealthCheck();
 
                 if (currentType == PROXY_TYPE_GO) {
-                    GoProxyManager.killGoProxy();
-                    waitForPortReleased();
                     boolean goStarted = startGoProxySync(context.getApplicationContext());
                     if (goStarted) {
+                        stopJavaProxy();
                         activeProxyType.set(PROXY_TYPE_GO);
                         isProxyRunning.set(true);
-                        log("[重启] Go代理重启成功");
+                        log("[重启] Go代理重启成功，后端端口: " + GoProxyManager.getCurrentBackendPort());
                         startHealthCheck(context.getApplicationContext());
                     } else {
                         GoProxyManager.killGoProxy();
-                        waitForPortReleased();
                         log("[降级] Go代理重启失败，切换到Java代理");
                         startJavaProxy(context.getApplicationContext());
                     }
                 } else if (currentType == PROXY_TYPE_JAVA) {
-                    stopJavaProxy();
                     boolean success = startJavaProxy(context.getApplicationContext());
                     if (!success) {
                         log("[重启] Java代理重启也失败");
@@ -222,18 +223,21 @@ public class ProxyManager {
     }
 
     public static synchronized boolean startJavaProxy(Context context) {
-        stopJavaProxy();
-        if (GoProxyManager.isProxyRunning.get()) {
-            GoProxyManager.killGoProxy();
-            waitForPortReleased();
+        if (isJavaProxyEndpointHealthy()) {
+            activeProxyType.set(PROXY_TYPE_JAVA);
+            isProxyRunning.set(true);
+            log("[启动] Java代理已健康运行，直接复用现有服务");
+            startHealthCheck(context);
+            return true;
         }
+        stopJavaProxy();
         try {
-            javaProxyServer = new JavaProxyServer(PROXY_PORT);
+            javaProxyServer = new JavaProxyServer(JAVA_BACKEND_PORT);
             boolean success = javaProxyServer.startServer();
             if (success) {
                 activeProxyType.set(PROXY_TYPE_JAVA);
                 isProxyRunning.set(true);
-                log("[启动] Java代理成功，端口: " + PROXY_PORT);
+                log("[启动] Java代理成功，后端端口: " + JAVA_BACKEND_PORT);
                 startHealthCheck(context);
             } else {
                 activeProxyType.set(PROXY_TYPE_NONE);
@@ -243,6 +247,13 @@ public class ProxyManager {
             return success;
         } catch (Exception e) {
             log("[启动] Java代理异常: " + e.getMessage());
+            if (isAddressInUseError(e) && isJavaProxyEndpointHealthy()) {
+                activeProxyType.set(PROXY_TYPE_JAVA);
+                isProxyRunning.set(true);
+                log("[启动] Java代理端口已被现有实例占用，复用已有服务");
+                startHealthCheck(context);
+                return true;
+            }
             activeProxyType.set(PROXY_TYPE_NONE);
             isProxyRunning.set(false);
             return false;
@@ -264,12 +275,18 @@ public class ProxyManager {
         return activeProxyType.get();
     }
 
+    public static int getPreferredProxyType() {
+        return preferredProxyType;
+    }
+
     public static boolean isProxyRunning() {
         return isProxyRunning.get();
     }
 
     public static String getProxyTypeName() {
         int type = activeProxyType.get();
+        if (type == PROXY_TYPE_NONE && isJavaProxyEndpointHealthy()) type = PROXY_TYPE_JAVA;
+        if (type == PROXY_TYPE_NONE) type = preferredProxyType;
         if (type == PROXY_TYPE_GO) return "Go代理";
         if (type == PROXY_TYPE_JAVA) return "Java代理";
         return "未启动";
@@ -277,6 +294,8 @@ public class ProxyManager {
 
     public static String getProxyTypeShortName() {
         int type = activeProxyType.get();
+        if (type == PROXY_TYPE_NONE && isJavaProxyEndpointHealthy()) type = PROXY_TYPE_JAVA;
+        if (type == PROXY_TYPE_NONE) type = preferredProxyType;
         if (type == PROXY_TYPE_GO) return "Go";
         if (type == PROXY_TYPE_JAVA) return "Java";
         return "无";
@@ -284,6 +303,8 @@ public class ProxyManager {
 
     public static String getProxyStatusText() {
         if (isSwitching.get()) return "切换中...";
+        if (activeProxyType.get() == PROXY_TYPE_JAVA && isJavaProxyBackendHealthy()) return "运行中";
+        if (activeProxyType.get() == PROXY_TYPE_GO && isGoProxyBackendHealthy()) return "运行中";
         if (!isProxyRunning.get()) return "已停止";
         return "运行中";
     }
@@ -356,7 +377,7 @@ public class ProxyManager {
             if (goStarted) {
                 activeProxyType.set(PROXY_TYPE_GO);
                 isProxyRunning.set(true);
-                log("[重启] Go代理重启成功");
+                log("[重启] Go代理重启成功，后端端口: " + GoProxyManager.getCurrentBackendPort());
                 startHealthCheck(context);
                 isSwitching.set(false);
                 return;
@@ -407,7 +428,7 @@ public class ProxyManager {
                 return false;
             }
             try {
-                String url = "http://127.0.0.1:" + PROXY_PORT + "/health";
+                String url = JAVA_HEALTH_CHECK_URL;
                 String response = com.github.catvod.net.OkHttp.string(url, 1000);
                 return parseHealthResponse(response);
             } catch (Exception e) {
@@ -416,7 +437,45 @@ public class ProxyManager {
             }
         }
 
-        return GoProxyManager.isProxyHealthy();
+        if (currentType == PROXY_TYPE_GO) return isGoProxyBackendHealthy();
+        return isRelayHealthy();
+    }
+
+    private static boolean isJavaProxyEndpointHealthy() {
+        return isJavaProxyBackendHealthy();
+    }
+
+    private static boolean isJavaProxyBackendHealthy() {
+        try {
+            String response = com.github.catvod.net.OkHttp.string(JAVA_HEALTH_CHECK_URL, 1000);
+            return parseHealthResponse(response);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static boolean isGoProxyBackendHealthy() {
+        try {
+            String response = com.github.catvod.net.OkHttp.string(GoProxyManager.getCurrentHealthCheckUrl(), 1000);
+            return parseHealthResponse(response);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static boolean isRelayHealthy() {
+        try {
+            String response = com.github.catvod.net.OkHttp.string(HEALTH_CHECK_URL, 1000);
+            return parseHealthResponse(response);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static boolean isAddressInUseError(Exception e) {
+        if (e == null) return false;
+        String message = e.getMessage();
+        return message != null && (message.contains("EADDRINUSE") || message.contains("Address already in use"));
     }
 
     private static boolean parseHealthResponse(String response) {
@@ -430,6 +489,21 @@ public class ProxyManager {
         } catch (Exception ignored) {
         }
         return false;
+    }
+
+    private static synchronized void ensureRelayServer() {
+        if (relayServer != null && relayServer.isRunning()) return;
+        relayServer = new ProxyRelayServer(PROXY_PORT, ProxyManager::resolveBackendPort);
+        relayServer.startServer();
+    }
+
+    private static int resolveBackendPort() {
+        int type = activeProxyType.get();
+        if (type == PROXY_TYPE_GO && isGoProxyBackendHealthy()) return GoProxyManager.getCurrentBackendPort();
+        if (type == PROXY_TYPE_JAVA && isJavaProxyBackendHealthy()) return JAVA_BACKEND_PORT;
+        if (isJavaProxyBackendHealthy()) return JAVA_BACKEND_PORT;
+        if (isGoProxyBackendHealthy()) return GoProxyManager.getCurrentBackendPort();
+        return -1;
     }
 
     private static void saveProxyType(Context context, int type) {
@@ -466,6 +540,10 @@ public class ProxyManager {
 
     public static String getLogContent() {
         return getLogContent(false);
+    }
+
+    public static boolean hasLogs() {
+        return !proxyLogBuffer.isEmpty();
     }
 
     public static void clearLogs() {
