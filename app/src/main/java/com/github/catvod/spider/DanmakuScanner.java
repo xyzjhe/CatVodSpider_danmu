@@ -2531,6 +2531,7 @@ public class DanmakuScanner {
                     proxyTypeName + " | " + proxyStatus + " | " + proxyHealth :
                     proxyTypeName + " | " + proxyStatus;
             optionsList.add("🔌 代理状态 [" + proxyStatusText + "]");
+            optionsList.add("🔢 代理端口 [" + ProxyManager.getProxyPort() + "]");
 
             String switchLabel = ProxyManager.getActiveProxyType() == ProxyManager.PROXY_TYPE_JAVA ?
                     (ProxyManager.canSwitchToGoProxy() ? "切换Go代理" : "Go不可用") :
@@ -2618,7 +2619,12 @@ public class DanmakuScanner {
                             DanmakuSpider.log("[菜单] 查看代理状态: " + sToastMsg);
                             break;
 
-                        case 10: // 切换代理
+                        case 10: // 代理端口
+                            DanmakuSpider.log("[菜单] 打开代理端口设置");
+                            DanmakuUIHelper.showProxyPortDialog(activity);
+                            break;
+
+                        case 11: // 切换代理
                             if (ProxyManager.isSwitching()) {
                                 Utils.safeShowToast(activity, "代理切换中，请稍候...");
                                 break;
@@ -2637,7 +2643,7 @@ public class DanmakuScanner {
                             }
                             break;
 
-                        case 11: // 重启代理
+                        case 12: // 重启代理
                             if (ProxyManager.isSwitching()) {
                                 Utils.safeShowToast(activity, "代理操作中，请稍候...");
                                 break;

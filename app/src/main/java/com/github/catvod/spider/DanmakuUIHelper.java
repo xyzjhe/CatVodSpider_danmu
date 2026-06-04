@@ -1286,6 +1286,127 @@ public class DanmakuUIHelper {
         });
     }
 
+    public static void showProxyPortDialog(Context ctx) {
+        if (!(ctx instanceof Activity)) {
+            DanmakuSpider.log("错误：Context不是Activity");
+            return;
+        }
+        Activity activity = (Activity) ctx;
+        if (activity.isFinishing() || activity.isDestroyed()) {
+            DanmakuSpider.log("Activity已销毁或正在销毁，不显示代理端口配置对话框");
+            return;
+        }
+
+        activity.runOnUiThread(() -> {
+            try {
+                if (activity.isFinishing() || activity.isDestroyed()) {
+                    DanmakuSpider.log("Activity已销毁，不显示代理端口配置对话框");
+                    return;
+                }
+
+                AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+
+                LinearLayout mainLayout = new LinearLayout(activity);
+                mainLayout.setOrientation(LinearLayout.VERTICAL);
+                mainLayout.setBackgroundColor(BACKGROUND_WHITE);
+                mainLayout.setPadding(dpToPx(activity, 24), dpToPx(activity, 20), dpToPx(activity, 24), dpToPx(activity, 20));
+
+                TextView title = new TextView(activity);
+                title.setText("代理端口设置");
+                title.setTextSize(24);
+                title.setTextColor(PRIMARY_COLOR);
+                title.setGravity(Gravity.CENTER);
+                title.setPadding(0, dpToPx(activity, 8), 0, dpToPx(activity, 12));
+                title.setTypeface(null, android.graphics.Typeface.BOLD);
+                mainLayout.addView(title);
+
+                TextView subtitle = new TextView(activity);
+                subtitle.setText("对外代理入口端口，默认 5575");
+                subtitle.setTextSize(13);
+                subtitle.setTextColor(TEXT_SECONDARY);
+                subtitle.setGravity(Gravity.CENTER);
+                subtitle.setPadding(0, 0, 0, dpToPx(activity, 16));
+                mainLayout.addView(subtitle);
+
+                DanmakuConfig config = DanmakuConfigManager.getConfig(activity);
+
+                EditText portInput = new EditText(activity);
+                portInput.setHint(String.valueOf(DanmakuConfig.DEFAULT_PROXY_PORT));
+                portInput.setText(String.valueOf(config.getProxyPort()));
+                portInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+                portInput.setTextColor(TEXT_PRIMARY);
+                portInput.setTextSize(16);
+                portInput.setSingleLine(true);
+                portInput.setGravity(Gravity.CENTER);
+                portInput.setPadding(dpToPx(activity, 12), dpToPx(activity, 12), dpToPx(activity, 12), dpToPx(activity, 12));
+                portInput.setHintTextColor(TEXT_TERTIARY);
+                applyTVInputFocusEffect(portInput, false);
+                mainLayout.addView(portInput, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+                TextView current = new TextView(activity);
+                current.setText("当前：" + config.getProxyPort() + " | 内部端口：" + GoProxyManager.DEFAULT_BACKEND_PORT + "/" + ProxyManager.JAVA_BACKEND_PORT);
+                current.setTextSize(13);
+                current.setTextColor(TEXT_SECONDARY);
+                current.setGravity(Gravity.CENTER);
+                current.setPadding(0, dpToPx(activity, 12), 0, dpToPx(activity, 16));
+                mainLayout.addView(current);
+
+                LinearLayout btnLayout = new LinearLayout(activity);
+                btnLayout.setOrientation(LinearLayout.HORIZONTAL);
+                btnLayout.setGravity(Gravity.CENTER);
+
+                Button saveBtn = createStyledButton(activity, "保存", PRIMARY_COLOR);
+                Button resetBtn = createStyledButton(activity, "默认", ACCENT_COLOR);
+                Button cancelBtn = createStyledButtonWithBorder(activity, "取消", PRIMARY_COLOR);
+
+                LinearLayout.LayoutParams btnParams = new LinearLayout.LayoutParams(
+                        0, dpToPx(activity, 44), 1);
+                btnParams.setMargins(dpToPx(activity, 6), 0, dpToPx(activity, 6), 0);
+
+                saveBtn.setLayoutParams(btnParams);
+                resetBtn.setLayoutParams(btnParams);
+                cancelBtn.setLayoutParams(btnParams);
+
+                btnLayout.addView(saveBtn);
+                btnLayout.addView(resetBtn);
+                btnLayout.addView(cancelBtn);
+                mainLayout.addView(btnLayout);
+
+                builder.setView(mainLayout);
+                AlertDialog dialog = builder.create();
+
+                saveBtn.setOnClickListener(v -> {
+                    try {
+                        int port = parseProxyPort(portInput.getText().toString());
+                        boolean applied = ProxyManager.updateProxyPort(activity.getApplicationContext(), port);
+                        String msg = applied ? "代理端口已保存：" + port : "代理端口已保存，当前端口启用失败：" + port;
+                        Utils.safeShowToast(activity, msg);
+                        DanmakuSpider.log(msg);
+                        dialog.dismiss();
+                    } catch (NumberFormatException e) {
+                        Utils.safeShowToast(activity, "请输入 1024-65535 的有效端口");
+                    }
+                });
+
+                resetBtn.setOnClickListener(v -> {
+                    int port = DanmakuConfig.DEFAULT_PROXY_PORT;
+                    boolean applied = ProxyManager.updateProxyPort(activity.getApplicationContext(), port);
+                    String msg = applied ? "代理端口已恢复默认：" + port : "代理端口已恢复默认，当前启用失败";
+                    Utils.safeShowToast(activity, msg);
+                    DanmakuSpider.log(msg);
+                    dialog.dismiss();
+                });
+
+                cancelBtn.setOnClickListener(v -> dialog.dismiss());
+
+                safeShowDialog(activity, dialog);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        });
+    }
+
     public static void showDanmakuStyleDialog(Context ctx) {
         if (!(ctx instanceof Activity)) {
             DanmakuSpider.log("错误：Context不是Activity");
@@ -1368,6 +1489,18 @@ public class DanmakuUIHelper {
         if (seconds > 600) seconds = 600;
         if (seconds < -600) seconds = -600;
         return (int) Math.round(seconds * 1000);
+    }
+
+    private static int parseProxyPort(String text) throws NumberFormatException {
+        if (TextUtils.isEmpty(text) || TextUtils.isEmpty(text.trim())) {
+            return DanmakuConfig.DEFAULT_PROXY_PORT;
+        }
+        int port = Integer.parseInt(text.trim());
+        if (port < 1024 || port > 65535) throw new NumberFormatException("invalid port");
+        if (port == GoProxyManager.DEFAULT_BACKEND_PORT || port == ProxyManager.JAVA_BACKEND_PORT) {
+            throw new NumberFormatException("backend port");
+        }
+        return port;
     }
 
     private static void refreshCurrentDanmaku(Activity activity, int offsetMs) {

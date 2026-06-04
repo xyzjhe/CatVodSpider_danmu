@@ -42,16 +42,16 @@ public class ProxyRelayServer {
         } catch (Exception e) {
             ProxyManager.log("[前门] 启动失败: " + e.getMessage());
             running = false;
+            closeServerSocketQuietly();
+            acceptExecutor.shutdownNow();
+            relayExecutor.shutdownNow();
             return false;
         }
     }
 
     public void stopServer() {
         running = false;
-        try {
-            if (serverSocket != null && !serverSocket.isClosed()) serverSocket.close();
-        } catch (Exception ignored) {
-        }
+        closeServerSocketQuietly();
         acceptExecutor.shutdownNow();
         relayExecutor.shutdownNow();
         ProxyManager.log("[前门] 固定代理入口已停止");
@@ -135,6 +135,13 @@ public class ProxyRelayServer {
         if (socket == null) return;
         try {
             socket.close();
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void closeServerSocketQuietly() {
+        try {
+            if (serverSocket != null && !serverSocket.isClosed()) serverSocket.close();
         } catch (Exception ignored) {
         }
     }

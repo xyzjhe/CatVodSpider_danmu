@@ -22,9 +22,8 @@ public class ProxyManager {
     public static final int PROXY_TYPE_GO = 1;
     public static final int PROXY_TYPE_JAVA = 2;
 
-    public static final int PROXY_PORT = 5575;
+    public static final int DEFAULT_PROXY_PORT = DanmakuConfig.DEFAULT_PROXY_PORT;
     public static final int JAVA_BACKEND_PORT = 5577;
-    private static final String HEALTH_CHECK_URL = "http://127.0.0.1:" + PROXY_PORT + "/health";
     private static final String JAVA_HEALTH_CHECK_URL = "http://127.0.0.1:" + JAVA_BACKEND_PORT + "/health";
 
     private static final ExecutorService executor = Executors.newFixedThreadPool(5);
@@ -32,8 +31,10 @@ public class ProxyManager {
     private static final AtomicInteger activeProxyType = new AtomicInteger(PROXY_TYPE_NONE);
 
     private static volatile int preferredProxyType = PROXY_TYPE_NONE;
+    private static volatile int configuredProxyPort = DEFAULT_PROXY_PORT;
     private static volatile JavaProxyServer javaProxyServer;
     private static volatile ProxyRelayServer relayServer;
+    private static volatile int relayServerPort = -1;
 
     private static final List<String> proxyLogBuffer = new CopyOnWriteArrayList<>();
     private static final int MAX_LOG_SIZE = 1000;
@@ -51,9 +52,10 @@ public class ProxyManager {
     }
 
     public static void initialize(Context context) {
+        DanmakuConfig config = DanmakuConfigManager.loadConfig(context);
+        preferredProxyType = config.getProxyType();
+        configuredProxyPort = config.getProxyPort();
         ensureRelayServer();
-        int saved = DanmakuConfigManager.loadConfig(context).getProxyType();
-        preferredProxyType = saved;
 
         // 恢复按用户偏好启动代理：仅在明确选择Go代理时才走SO/JNI路径。
         if (GoProxyManager.isGoProxyAssetExists() && preferredProxyType == PROXY_TYPE_GO) {
@@ -208,18 +210,19 @@ public class ProxyManager {
 
     private static void waitForPortReleased(long timeoutMs) {
         long start = System.currentTimeMillis();
+        int port = getProxyPort();
         while (System.currentTimeMillis() - start < timeoutMs) {
             java.net.Socket socket = null;
             try {
                 socket = new java.net.Socket();
-                socket.connect(new java.net.InetSocketAddress("127.0.0.1", PROXY_PORT), 200);
+                socket.connect(new java.net.InetSocketAddress("127.0.0.1", port), 200);
                 socket.close();
                 Thread.sleep(300);
             } catch (Exception e) {
                 return;
             }
         }
-        log("[端口] 等待端口释放超时: " + PROXY_PORT);
+        log("[端口] 等待端口释放超时: " + port);
     }
 
     public static synchronized boolean startJavaProxy(Context context) {
@@ -277,6 +280,34 @@ public class ProxyManager {
 
     public static int getPreferredProxyType() {
         return preferredProxyType;
+    }
+
+    public static int getProxyPort() {
+        return DanmakuConfig.normalizeProxyPort(configuredProxyPort);
+    }
+
+    public static boolean applyConfig(Context context) {
+        if (context == null) return ensureRelayServer();
+        DanmakuConfig config = DanmakuConfigManager.loadConfig(context);
+        preferredProxyType = config.getProxyType();
+        configuredProxyPort = config.getProxyPort();
+        return ensureRelayServer();
+    }
+
+    public static boolean updateProxyPort(Context context, int port) {
+        if (context == null) return false;
+        int normalized = DanmakuConfig.normalizeProxyPort(port);
+        DanmakuConfig config = DanmakuConfigManager.getConfig(context);
+        config.setProxyPort(normalized);
+        DanmakuConfigManager.saveConfig(context, config);
+        configuredProxyPort = normalized;
+        boolean applied = ensureRelayServer();
+        if (applied) {
+            log("[配置] 对外代理端口已保存并应用: " + normalized);
+        } else {
+            log("[配置] 对外代理端口已保存，但当前应用失败: " + normalized);
+        }
+        return applied;
     }
 
     public static boolean isProxyRunning() {
@@ -465,11 +496,15 @@ public class ProxyManager {
 
     private static boolean isRelayHealthy() {
         try {
-            String response = com.github.catvod.net.OkHttp.string(HEALTH_CHECK_URL, 1000);
+            String response = com.github.catvod.net.OkHttp.string(buildRelayHealthCheckUrl(), 1000);
             return parseHealthResponse(response);
         } catch (Exception e) {
             return false;
         }
+    }
+
+    private static String buildRelayHealthCheckUrl() {
+        return "http://127.0.0.1:" + getProxyPort() + "/health";
     }
 
     private static boolean isAddressInUseError(Exception e) {
@@ -491,10 +526,27 @@ public class ProxyManager {
         return false;
     }
 
-    private static synchronized void ensureRelayServer() {
-        if (relayServer != null && relayServer.isRunning()) return;
-        relayServer = new ProxyRelayServer(PROXY_PORT, ProxyManager::resolveBackendPort);
-        relayServer.startServer();
+    private static synchronized boolean ensureRelayServer() {
+        int port = getProxyPort();
+        if (relayServer != null && relayServer.isRunning() && relayServerPort == port) return true;
+
+        ProxyRelayServer oldRelay = relayServer;
+        int oldPort = relayServerPort;
+        ProxyRelayServer newRelay = new ProxyRelayServer(port, ProxyManager::resolveBackendPort);
+        boolean started = newRelay.startServer();
+        if (!started) {
+            if (oldRelay != null && oldRelay.isRunning()) {
+                log("[前门] 新端口启动失败，继续使用原端口: " + oldPort);
+            }
+            return oldRelay != null && oldRelay.isRunning();
+        }
+
+        relayServer = newRelay;
+        relayServerPort = port;
+        if (oldRelay != null && oldRelay != newRelay) {
+            oldRelay.stopServer();
+        }
+        return true;
     }
 
     private static int resolveBackendPort() {
