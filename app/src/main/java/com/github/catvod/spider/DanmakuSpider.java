@@ -219,6 +219,7 @@ public class DanmakuSpider extends Spider {
             }
         }
         DanmakuConfigManager.saveConfig(context, config);
+        ProxyManager.applyConfig(context);
 
         if (initialized) return;
 
@@ -377,6 +378,11 @@ public class DanmakuSpider extends Spider {
                     proxyStatusText);
             list.put(proxyStatusVod);
 
+            // 对外代理端口配置
+            JSONObject proxyPortVod = createVod("proxy_port", "代理端口", "",
+                    "当前: " + config.getProxyPort());
+            list.put(proxyPortVod);
+
             // 切换代理类型按钮
             String currentProxy = ProxyManager.getProxyTypeName();
             String switchLabel = ProxyManager.getActiveProxyType() == ProxyManager.PROXY_TYPE_JAVA ?
@@ -468,6 +474,8 @@ public class DanmakuSpider extends Spider {
                                             "代理类型: " + pTypeName + "\n状态: " + pStatus;
                                     Utils.safeShowToast(ctx, toastMsg);
                                     refreshCategoryContent(ctx);
+                                } else if (id.equals("proxy_port")) {
+                                    DanmakuUIHelper.showProxyPortDialog(ctx);
                                 } else if (id.equals("proxy_switch")) {
                                     if (ProxyManager.isSwitching()) {
                                         Utils.safeShowToast(ctx, "代理切换中，请稍候...");
@@ -527,6 +535,7 @@ public class DanmakuSpider extends Spider {
                     id.equals("log") ? "查看日志" : id.equals("cache_manager") ? "缓存管理" : id.equals("lp_config") ? "布局配置" :
                             id.equals("danmaku_style") ? "弹幕交互模式" :
                             id.equals("proxy_status") ? "代理状态" :
+                            id.equals("proxy_port") ? "代理端口" :
                             id.equals("proxy_switch") ? "切换代理" :
                             id.equals("proxy_restart") ? "重启代理" : "Leo 弹幕设置");
             vod.put("vod_pic", "");
@@ -550,6 +559,7 @@ public class DanmakuSpider extends Spider {
                             id.equals("lp_config") ? "调整弹窗大小和透明度" :
                             id.equals("danmaku_style") ? "当前：" + config.getDanmakuStyleDisplayName() :
                             id.equals("proxy_status") ? proxyStatusText :
+                            id.equals("proxy_port") ? "当前: " + config.getProxyPort() :
                             id.equals("proxy_switch") ? "当前: " + proxyTypeName + " | " + switchLabel :
                             id.equals("proxy_restart") ? "点击重启代理服务" : "请稍候...");
             vod.put("vod_play_url", "");
@@ -594,6 +604,8 @@ public class DanmakuSpider extends Spider {
                         String statusText = typeName + " | " +
                                 (ProxyManager.isProxyRunning() ? status + " | " + health : status);
                         item.put("vod_remarks", statusText);
+                    } else if ("proxy_port".equals(item.getString("vod_id"))) {
+                        item.put("vod_remarks", "当前: " + config.getProxyPort());
                     } else if ("proxy_switch".equals(item.getString("vod_id"))) {
                         String pName = ProxyManager.getProxyTypeName();
                         String sw = ProxyManager.getActiveProxyType() == ProxyManager.PROXY_TYPE_JAVA ?

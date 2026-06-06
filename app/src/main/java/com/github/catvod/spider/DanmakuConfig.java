@@ -17,6 +17,7 @@ public class DanmakuConfig {
     public static final String STYLE_GRID = "网格模式";
     public static final String STYLE_DARK_GRID = "深色网格";
     public static final String STYLE_MODERN_PANEL = "新版面板";
+    public static final int DEFAULT_PROXY_PORT = 5575;
 
     public static final String[] STYLE_OPTIONS = {
             STYLE_CLASSIC,
@@ -66,6 +67,10 @@ public class DanmakuConfig {
      * 代理类型：0=自动(默认)，1=Go代理，2=Java代理
      */
     public int proxyType;
+    /**
+     * 对外代理入口端口。
+     */
+    public int proxyPort;
 
     public DanmakuConfig() {
         apiUrls = new LinkedHashSet<>();
@@ -78,6 +83,7 @@ public class DanmakuConfig {
         silentMode = true;
         danmakuTimeOffsetMs = 0;
         proxyType = 0;
+        proxyPort = DEFAULT_PROXY_PORT;
     }
 
     public void updateFromJson(JSONObject json) {
@@ -115,6 +121,13 @@ public class DanmakuConfig {
         }
         if (json.has("proxyType")) {
             setProxyType(json.optInt("proxyType", proxyType));
+        }
+        if (json.has("proxyPort")) {
+            setProxyPort(json.optInt("proxyPort", proxyPort));
+        } else if (json.has("proxy_port")) {
+            setProxyPort(json.optInt("proxy_port", proxyPort));
+        } else if (json.has("proxyServerPort")) {
+            setProxyPort(json.optInt("proxyServerPort", proxyPort));
         }
     }
 
@@ -230,6 +243,7 @@ public class DanmakuConfig {
         if (apiUrls == null) apiUrls = new LinkedHashSet<>();
         if (apiSources == null) apiSources = new ArrayList<>();
         danmakuStyle = normalizeDanmakuStyle(danmakuStyle);
+        proxyPort = normalizeProxyPort(proxyPort);
 
         List<DanmakuApiSource> oldSources = new ArrayList<>(apiSources);
         if (apiSources.isEmpty() && !apiUrls.isEmpty()) {
@@ -446,5 +460,20 @@ public class DanmakuConfig {
         if (proxyType < 0) proxyType = 0;
         if (proxyType > 2) proxyType = 0;
         this.proxyType = proxyType;
+    }
+
+    public int getProxyPort() {
+        proxyPort = normalizeProxyPort(proxyPort);
+        return proxyPort;
+    }
+
+    public void setProxyPort(int proxyPort) {
+        this.proxyPort = normalizeProxyPort(proxyPort);
+    }
+
+    public static int normalizeProxyPort(int proxyPort) {
+        if (proxyPort < 1024 || proxyPort > 65535) return DEFAULT_PROXY_PORT;
+        if (proxyPort == 5576 || proxyPort == 5577) return DEFAULT_PROXY_PORT;
+        return proxyPort;
     }
 }

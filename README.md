@@ -24,6 +24,7 @@
            "apiUrl": "LogVar弹幕API端点",
            "autoPushEnabled": true,
            "danmakuStyle": "经典模式",
+           "proxyPort": 5575,
            "lpAlpha": 0.9
        }
    }
@@ -49,6 +50,7 @@
            "apiUrl": "LogVar弹幕API端点",
            "autoPushEnabled": true,
            "danmakuStyle": "经典模式",
+           "proxyPort": 5575,
            "lpAlpha": 0.9
        }
    }
@@ -61,6 +63,7 @@
 | `apiUrl` | String | - | 弹幕接口地址，多个地址用逗号分隔     |
 | `autoPushEnabled` | Boolean | `false` | 是否开启自动推送弹幕       |
 | `danmakuStyle` | String | `经典模式` | 弹幕交互模式，可选值：经典模式、网格模式、深色网格、新版面板；兼容旧值：模板一、模板二、模板三、模板四 |
+| `proxyPort` | Integer | `5575` | 对外代理入口端口，支持在站点页面或长按 Leo 弹幕按钮菜单中修改并本地保存 |
 | `lpAlpha` | Float | `0.9` | 弹幕透明度，取值范围 0.1-1     |
 | `lpWidth` | Float | `0.9` | 弹幕搜索框宽度比例，取值范围 0.1-1 |
 | `lpHeight` | Float | `0.85` | 弹幕搜索框高度比例，取值范围 0.1-1 |
